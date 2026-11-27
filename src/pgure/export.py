@@ -6,7 +6,8 @@ from tempfile import NamedTemporaryFile
 from typing import BinaryIO
 
 from .model import Topology
-from .svg import Style, render_svg
+from .style import Style
+from .svg import render_svg
 
 
 _FORMATS = {".svg": "SVG", ".png": "PNG", ".jpg": "JPEG", ".jpeg": "JPEG", ".webp": "WebP"}

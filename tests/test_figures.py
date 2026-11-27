@@ -188,7 +188,7 @@ views:
         guide = (DOCS / "figure-yaml.md").read_text(encoding="utf-8")
         code = guide.split("```yaml\n", 1)[1].split("```", 1)[0]
         self.assertEqual(code, (DOCS / "gossip.yaml").read_text(encoding="utf-8"))
-        graph = parse(code)
+        graph = load(DOCS / "gossip.yaml")
         network = Topology("Gossip")
         for a, b in [("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")]:
             network.add_link(a, b)
@@ -196,9 +196,8 @@ views:
             network.set_role(peer, role)
         network.add_view("Via B", [Message(("A", "B", "D"), "eager")])
         network.add_view("Via C", [Message(("A", "C", "D"), "lazy")])
-        style = Style(messages={"eager": Stroke("#145f91"), "lazy": Stroke("#995321", "6 3")})
-        svg = render_svg(graph, style=style)
-        self.assertEqual(svg, render_svg(network, style=style))
+        svg = render_svg(graph)
+        self.assertEqual(svg, render_svg(network, style=graph.style))
         self.assertEqual(svg, (DOCS / "gossip.svg").read_text(encoding="utf-8"))
         panels = ET.fromstring(svg).findall("s:g[@class='panel']", SVG)
         self.assertEqual(len(panels), 2)

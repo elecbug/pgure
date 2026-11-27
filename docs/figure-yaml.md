@@ -6,7 +6,7 @@ A UTF-8 YAML document describes one topology. Each view adds a panel that shares
 
 ![Two panels show the same four peers. The solid route goes through B and the dashed route through C.](gossip.svg)
 
-The four links are available in both panels. A message's `path` lists the peers it visits in transmission order. The sample assigns the classes `eager` and `lazy` to the two routes. [Download the example](gossip.yaml).
+The four links are available in both panels. A message's `path` lists the peers it visits in transmission order. The topology assigns the classes `eager` and `lazy` to the two routes. The companion stylesheet makes the lazy route dashed. [Topology](gossip.yaml) · [Stylesheet](gossip.meta.yaml)
 
 ```yaml
 name: Gossip
@@ -34,14 +34,10 @@ views:
 From the repository root, render this example with the following Python.
 
 ```python
-from pgure import Stroke, Style, load, save_figure
+from pgure import load, save_figure
 
 gossip = load("docs/gossip.yaml")
-style = Style(messages={
-    "eager": Stroke("#145f91"),
-    "lazy": Stroke("#995321", dash="6 3"),
-})
-save_figure(gossip, "gossip.svg", style=style)
+save_figure(gossip, "gossip.svg")
 ```
 
 ## Fields
@@ -84,7 +80,35 @@ The renderer places each connected component in breadth-first columns from its a
 
 Set `placement: overlay` on a message to follow the link centerline, or `placement: outside` to draw a separate arc between the same peers. Placement applies to every hop of that message. Within each view, the first use of a link takes the centerline by default and additional uses go outside. An explicit overlay reserves the centerline even if it occurs later. An explicit outside arc leaves the centerline available. On straight links the arc bends away from the layout center, or to the right of travel when the center lies on the link axis. On curved links it follows the existing bend. [Download the placement comparison](message-placement.yaml).
 
-Use a Python `Style` to share visual conventions across figures. `peer_fills` maps roles to fill colors. `links` and `messages` map classes to `Stroke` objects with a color and an optional SVG dash pattern. Unmapped classes use their category's default appearance.
+### Companion stylesheets
+
+Place `network.meta.yaml` beside `network.yaml` or `network.yml`. Each call to `load` reads the topology and its companion, so reloading after a design edit updates the next render. SVG, PNG, JPEG, and WebP exports all use the resulting style. A topology without a companion uses the built-in appearance.
+
+```yaml
+peers:
+  default: {fill: white, stroke: "#253544", width: 1.5}
+  roles:
+    source: {fill: "#173e54", label_color: white}
+links:
+  default: {color: "#778794", line: solid}
+  kinds:
+    bridge: {line: "--", width: 2}
+messages:
+  kinds:
+    lazy: {color: "#995321", line: dotted}
+```
+
+Rules inherit individual properties. Built-in values apply first, then the category's `default`, then the matching peer role or link/message kind. In the example, a bridge inherits the default link color and overrides its line pattern and width. Untagged objects and unmatched names use the category default. Each section is optional.
+
+| Section | Select by | Properties |
+| --- | --- | --- |
+| `peers` | `roles` | `fill` for the interior, `stroke` for the border color, `width` and `line` for the border, `label_color` for the peer ID |
+| `links` | `kinds` | `color`, `width`, `line` |
+| `messages` | `kinds` | `color`, `width`, `line` |
+
+Use SVG color strings and quote hex colors so YAML preserves the leading `#`. Widths are nonnegative numbers in SVG units. The named line patterns are `solid`, `dashed`, `dotted`, and `dash-dot`. Their short forms are `"-"`, `"--"`, `":"`, and `"-."`. For a custom pattern, use a sequence such as `line: [8, 3, 2, 3]` to alternate painted and empty lengths.
+
+To share one stylesheet across files, use `load("network.yaml", meta="themes/paper.meta.yaml")`. An explicit path selects that stylesheet in place of the companion. For a topology constructed in memory, pass `load_style("themes/paper.meta.yaml")` as the `style` argument to `render_svg` or `save_figure`. An explicit `style` argument takes precedence for that render.
 
 ## Saving a figure
 
@@ -95,9 +119,9 @@ python -m pip install -e '.[raster]'
 ```
 
 ```python
-save_figure(gossip, "gossip.png", style=style, scale=2)
-save_figure(gossip, "gossip.jpg", style=style, scale=2)
-save_figure(gossip, "gossip.webp", style=style, scale=2)
+save_figure(gossip, "gossip.png", scale=2)
+save_figure(gossip, "gossip.jpg", scale=2)
+save_figure(gossip, "gossip.webp", scale=2)
 ```
 
-The Gossip example measures 624 × 188 pixels at its default size and 1248 × 376 at `scale=2`. Use `render_svg(graph, style=style)` to get SVG markup as a Python string.
+The Gossip example measures 624 × 188 pixels at its default size and 1248 × 376 at `scale=2`. Use `render_svg(graph)` to get SVG markup as a Python string.

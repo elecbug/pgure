@@ -5,31 +5,12 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter, defaultdict, deque
-from collections.abc import Mapping
-from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 
 from .model import Topology
+from .style import INK, Stroke, Style
 
 
-@dataclass(frozen=True)
-class Stroke:
-    color: str
-    dash: str = ""
-
-
-@dataclass(frozen=True)
-class Style:
-    """Map peer roles to fill colors and link/message classes to SVG strokes."""
-
-    peer_fills: Mapping[str, str] = field(default_factory=dict)
-    links: Mapping[str, Stroke] = field(default_factory=dict)
-    messages: Mapping[str, Stroke] = field(default_factory=dict)
-
-
-_LINK = Stroke("#778794")
-_MESSAGE = Stroke("#145f91")
-_INK = "#213547"
 _Point = tuple[float, float]
 # XML 1.0 permits fewer characters than a Python string.
 _INVALID_XML = re.compile("[^\t\n\r\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
@@ -69,7 +50,7 @@ def _layout(graph: Topology) -> tuple[dict[str, _Point], float, int, int]:
 
 
 def _arrowhead(group: ET.Element, start: _Point, control: _Point, end: _Point,
-               color: str, filled: bool) -> None:
+               color: str, filled: bool, scale: float) -> None:
     # Interpolating along the two control segments gives the curve's tangent.
     t = 0.53 if filled else 0.85
     x1 = (1 - t) * start[0] + t * control[0]
@@ -80,12 +61,12 @@ def _arrowhead(group: ET.Element, start: _Point, control: _Point, end: _Point,
     y = (1 - t) * y1 + t * y2
     length = math.hypot(x2 - x1, y2 - y1)
     ux, uy = (x2 - x1) / length, (y2 - y1) / length
-    base_x, base_y = x - 8 * ux, y - 8 * uy
-    left = f"{base_x - 4 * uy:.2f},{base_y + 4 * ux:.2f}"
-    right = f"{base_x + 4 * uy:.2f},{base_y - 4 * ux:.2f}"
+    base_x, base_y = x - 8 * scale * ux, y - 8 * scale * uy
+    left = f"{base_x - 4 * scale * uy:.2f},{base_y + 4 * scale * ux:.2f}"
+    right = f"{base_x + 4 * scale * uy:.2f},{base_y - 4 * scale * ux:.2f}"
     path = f"M{left} L{x:.2f},{y:.2f} L{right}"
     ET.SubElement(group, "path", d=path + (" Z" if filled else ""),
-                  stroke=color, fill=color if filled else "none", **{"stroke-width": "1.5"})
+                  stroke=color, fill=color if filled else "none", **{"stroke-width": f"{1.5 * scale:g}"})
 
 
 def _link_bend(start: _Point, end: _Point, radius: float, directed: bool) -> float:
@@ -123,17 +104,27 @@ def _edge(group: ET.Element, start: _Point, end: _Point, radius: float, stroke: 
     ax, ay = boundary(start)
     bx, by = boundary(end)
     path = ET.SubElement(group, "path", d=f"M{ax:.2f},{ay:.2f} Q{cx:.2f},{cy:.2f} {bx:.2f},{by:.2f}",
-                         fill="none", stroke=stroke.color,
-                         **{"stroke-width": "2.5" if message else "1.4"})
-    if stroke.dash:
-        path.set("stroke-dasharray", stroke.dash)
-    if arrow:
-        _arrowhead(group, (ax, ay), (cx, cy), (bx, by), stroke.color, message)
+                         fill="none")
+    base_width = 2.5 if message else 1.4
+    width = _apply_stroke(path, stroke, base_width)
+    if arrow and width > 0:
+        _arrowhead(group, (ax, ay), (cx, cy), (bx, by), stroke.color, message, width / base_width)
     return path
 
 
-def _label(parent: ET.Element, text: str, x: float, y: float, size: int) -> ET.Element:
-    node = ET.SubElement(parent, "text", x=f"{x:g}", y=f"{y:g}", fill=_INK,
+def _apply_stroke(node: ET.Element, stroke: Stroke, fallback_width: float) -> float:
+    width = fallback_width if stroke.width is None else stroke.width
+    node.set("stroke", stroke.color)
+    node.set("stroke-width", f"{width:g}")
+    if stroke.dash:
+        node.set("stroke-dasharray", stroke.dash)
+    if stroke.round_caps:
+        node.set("stroke-linecap", "round")
+    return width
+
+
+def _label(parent: ET.Element, text: str, x: float, y: float, size: int, color: str = INK) -> ET.Element:
+    node = ET.SubElement(parent, "text", x=f"{x:g}", y=f"{y:g}", fill=color,
                          **{"text-anchor": "middle", "font-size": str(size)})
     node.text = text
     return node
@@ -144,7 +135,7 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
     if not math.isfinite(scale) or scale <= 0:
         raise ValueError("scale must be a positive finite number")
     graph.validate()
-    style = Style() if style is None else style
+    style = graph.style if style is None else style
     positions, radius, width, height = _layout(graph)
     links_by_hop = {}
     bends = {}
@@ -185,7 +176,7 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
                                                "data-directed": str(link.directed).lower()})
             if link.kind is not None:
                 group.set("data-kind", link.kind)
-            stroke = style.links.get(link.kind, _LINK) if link.kind else _LINK
+            stroke = style.links.get(link.kind, style.link_default) if link.kind else style.link_default
             _edge(group, positions[link.source], positions[link.target], radius, stroke,
                   arrow=link.directed, bend=bends[link.source, link.target])
         uses = Counter(links_by_hop[hop] for route in view.messages
@@ -197,7 +188,7 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
             group = ET.SubElement(panel, "g", {"class": "message", "data-path": " ".join(route.path)})
             if route.kind is not None:
                 group.set("data-kind", route.kind)
-            stroke = style.messages.get(route.kind, _MESSAGE) if route.kind else _MESSAGE
+            stroke = style.messages.get(route.kind, style.message_default) if route.kind else style.message_default
             for a, b in zip(route.path, route.path[1:]):
                 link = links_by_hop[a, b]
                 placement = route.placement or ("outside" if link in occupied else "overlay")
@@ -216,8 +207,9 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
             group = ET.SubElement(panel, "g", {"class": "peer", "data-id": peer})
             if role is not None:
                 group.set("data-role", role)
-            fill = style.peer_fills.get(role, "white") if role else "white"
-            ET.SubElement(group, "circle", cx=f"{x:g}", cy=f"{y:g}", r=f"{radius:g}",
-                          fill=fill, stroke=_INK, **{"stroke-width": "1.6"})
-            _label(group, peer, x, y + 5, 14)
+            peer_style = style.peers.get(role, style.peer_default) if role else style.peer_default
+            fill = style.peer_fills.get(role, peer_style.fill) if role else peer_style.fill
+            circle = ET.SubElement(group, "circle", cx=f"{x:g}", cy=f"{y:g}", r=f"{radius:g}", fill=fill)
+            _apply_stroke(circle, peer_style.border, 1.6)
+            _label(group, peer, x, y + 5, 14, peer_style.label_color)
     return ET.tostring(svg, encoding="unicode")

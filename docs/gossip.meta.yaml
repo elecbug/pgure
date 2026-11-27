@@ -1,0 +1,10 @@
+peers:
+  default: {fill: white, stroke: "#213547"}
+  roles:
+    source: {fill: "#173e54", label_color: white}
+    relay: {fill: "#e3f0f2"}
+
+messages:
+  default: {color: "#145f91", width: 2.5}
+  kinds:
+    lazy: {color: "#995321", line: "--"}

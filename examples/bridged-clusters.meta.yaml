@@ -1,0 +1,8 @@
+peers:
+  roles:
+    origin: {fill: "#fae9b8"}
+    isolated: {fill: "#eceff1"}
+
+links:
+  kinds:
+    bridge: {color: "#77583b", line: "--", width: 2}

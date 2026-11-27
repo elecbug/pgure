@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
+from sys import float_info
 
 from ruamel.yaml import YAML, YAMLError
 from ruamel.yaml.nodes import MappingNode, SequenceNode
 
-from .model import Message, Topology, _RouteError
+from .model import Message, Topology, _RouteError, _identifier
+from .style import PeerStyle, Stroke, Style
 
 
 _Path = tuple[str | int, ...]
@@ -105,6 +107,82 @@ def from_dict(data: Mapping) -> Topology:
     return graph
 
 
+_LINES = {
+    "solid": ("", False), "dashed": ("6 3", False),
+    "dotted": ("0 3", True), "dash-dot": ("6 3 1 3", False),
+}
+_LINE_ALIASES = {"-": "solid", "--": "dashed", ":": "dotted", "-.": "dash-dot"}
+
+
+def _number(value, path):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= float_info.max:
+        raise FigureError("expected a finite nonnegative number", path)
+    return value
+
+
+def _line(value, path):
+    if isinstance(value, str):
+        name = _LINE_ALIASES.get(value, value)
+        if name in _LINES:
+            return _LINES[name]
+    elif isinstance(value, list):
+        parts = [_number(n, (*path, i)) for i, n in enumerate(value)]
+        if any(parts):
+            return " ".join(f"{n:g}" for n in parts), False
+    raise FigureError("expected solid, dashed, dotted, dash-dot, or a nonzero dash sequence", path)
+
+
+def _color(data, field, default, path):
+    color = data.get(field, default)
+    if not isinstance(color, str) or not color.strip() or not color.isprintable():
+        raise FigureError("expected a color string, e.g. \"#145f91\"", (*path, field))
+    return color
+
+
+def _stroke(data, base, path, color_field):
+    color = _color(data, color_field, base.color, path)
+    width = _number(data["width"], (*path, "width")) if "width" in data else base.width
+    dash, round_caps = _line(data["line"], (*path, "line")) if "line" in data else (base.dash, base.round_caps)
+    return Stroke(color, dash, width, round_caps)
+
+
+def _edge_rule(data, base, path):
+    _record(data, path, (), ("color", "width", "line"))
+    return _stroke(data, base, path, "color")
+
+
+def _peer_rule(data, base, path):
+    _record(data, path, (), ("fill", "stroke", "width", "line", "label_color"))
+    return PeerStyle(fill=_color(data, "fill", base.fill, path),
+                     border=_stroke(data, base.border, path, "stroke"),
+                     label_color=_color(data, "label_color", base.label_color, path))
+
+
+def _rules(sheet, category, selector, base, compile_rule):
+    group = _record(sheet.get(category, {}), (category,), (), ("default", selector))
+    default = compile_rule(group.get("default", {}), base, (category, "default"))
+    rules = group.get(selector, {})
+    if not isinstance(rules, Mapping):
+        raise FigureError("expected a mapping", (category, selector))
+    resolved = {}
+    for name, props in rules.items():
+        path = (category, selector, str(name))
+        with _at(path):
+            _identifier(name)
+        resolved[name] = compile_rule(props, default, path)
+    return default, resolved
+
+
+def _style_from_dict(data):
+    _record(data, (), (), ("peers", "links", "messages"))
+    base = Style()
+    peer, peers = _rules(data, "peers", "roles", base.peer_default, _peer_rule)
+    link, links = _rules(data, "links", "kinds", base.link_default, _edge_rule)
+    message, messages = _rules(data, "messages", "kinds", base.message_default, _edge_rule)
+    return Style(peers=peers, links=links, messages=messages,
+                 peer_default=peer, link_default=link, message_default=message)
+
+
 def _field_mark(text: str, path: _Path):
     # Consult the YAML node marks only when reporting a semantic error.
     node = YAML(typ="safe", pure=True).compose(text)
@@ -121,8 +199,7 @@ def _field_mark(text: str, path: _Path):
     return node.start_mark if node is not None else None
 
 
-def parse(text: str, *, source: str = "<string>") -> Topology:
-    """Read one YAML figure from a string."""
+def _parse_document(text, source, construct):
     try:
         data = YAML(typ="safe", pure=True).load(text)
     except YAMLError as error:
@@ -131,7 +208,7 @@ def parse(text: str, *, source: str = "<string>") -> Topology:
                           line=mark.line + 1 if mark else None,
                           column=mark.column + 1 if mark else None) from error
     try:
-        return from_dict(data)
+        return construct(data)
     except FigureError as error:
         mark = _field_mark(text, error.path)
         raise FigureError(error.detail, error.path, source=source,
@@ -139,7 +216,25 @@ def parse(text: str, *, source: str = "<string>") -> Topology:
                           column=mark.column + 1 if mark else None) from error
 
 
-def load(path: str | Path) -> Topology:
-    """Read one UTF-8 YAML figure from a file."""
+def parse(text: str, *, source: str = "<string>") -> Topology:
+    """Read one YAML figure from a string."""
+    return _parse_document(text, source, from_dict)
+
+
+def load_style(path: str | Path) -> Style:
+    """Load a YAML stylesheet for use with any topology."""
     path = Path(path)
-    return parse(path.read_text(encoding="utf-8"), source=str(path))
+    return _parse_document(path.read_text(encoding="utf-8"), str(path), _style_from_dict)
+
+
+def load(path: str | Path, *, meta: str | Path | None = None) -> Topology:
+    """Load a figure and its sibling <stem>.meta.yaml, or a specified stylesheet."""
+    path = Path(path)
+    graph = parse(path.read_text(encoding="utf-8"), source=str(path))
+    if meta is not None:
+        graph.style = load_style(meta)
+    else:
+        companion = path.with_suffix(".meta.yaml")
+        if companion.is_file():
+            graph.style = load_style(companion)
+    return graph

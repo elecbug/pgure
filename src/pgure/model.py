@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from .style import Style
 
 PLACEMENTS = ("overlay", "outside")
 
@@ -66,6 +67,7 @@ class Topology:
 
     def __init__(self, name: str):
         self.name = _identifier(name)
+        self.style = Style()
         self._peers: dict[str, str | None] = {}
         self._links: dict[tuple[str, str, bool], Link] = {}
         self._views: list[View] = []

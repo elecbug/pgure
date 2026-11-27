@@ -1,0 +1,4 @@
+peers:
+  roles:
+    origin: {fill: "#fae9b8"}
+    relay: {fill: "#deedf4"}

@@ -1,6 +1,6 @@
 # P-Gure example gallery
 
-These four figures show how peer links and message paths interact. Each entry includes the full YAML, a PNG preview, and an SVG for use in a paper.
+These four figures show how peer links and message paths interact. Each entry includes the topology and its companion stylesheet, a PNG preview, and an SVG for use in a paper.
 
 ## Broadcast in two rounds
 
@@ -8,7 +8,7 @@ A sends the announcement to B and C in the first panel. The second panel shows B
 
 ![Two views of a seven-peer tree. Arrows go from the root to two relays on the left, then from the relays to four leaves on the right.](tree-broadcast.png)
 
-[YAML source](tree-broadcast.yaml) · [Vector figure](tree-broadcast.svg)
+[Topology](tree-broadcast.yaml) · [Stylesheet](tree-broadcast.meta.yaml) · [Vector figure](tree-broadcast.svg)
 
 <details>
 <summary>View YAML</summary>
@@ -49,7 +49,7 @@ A hands a token to B. It passes through C, D, and E before returning to A. Every
 
 ![Five directed links form a cycle, with filled message arrows tracing A to B to C to D to E and back to A.](directed-ring.png)
 
-[YAML source](directed-ring.yaml) · [Vector figure](directed-ring.svg)
+[Topology](directed-ring.yaml) · [Stylesheet](directed-ring.meta.yaml) · [Vector figure](directed-ring.svg)
 
 <details>
 <summary>View YAML</summary>
@@ -80,7 +80,7 @@ Edge requests a block from Seed through Relay. The solid blue request follows th
 
 ![A blue request travels from Edge through Relay to Seed. A dashed orange arc on each link shows the block traveling back.](block-exchange.png)
 
-[YAML source](block-exchange.yaml) · [Vector figure](block-exchange.svg)
+[Topology](block-exchange.yaml) · [Stylesheet](block-exchange.meta.yaml) · [Vector figure](block-exchange.svg)
 
 <details>
 <summary>View YAML</summary>
@@ -110,7 +110,7 @@ The triangles A–B–C and D–E–F share one connection, C–D. Follow the bl
 
 ![Two three-peer clusters joined by a dashed bridge between C and D. A message crosses the bridge and reaches F. X stands alone.](bridged-clusters.png)
 
-[YAML source](bridged-clusters.yaml) · [Vector figure](bridged-clusters.svg)
+[Topology](bridged-clusters.yaml) · [Stylesheet](bridged-clusters.meta.yaml) · [Vector figure](bridged-clusters.svg)
 
 <details>
 <summary>View YAML</summary>
@@ -146,23 +146,19 @@ From the repository root, install the raster extra to generate PNG previews alon
 python -m pip install -e '.[raster]'
 ```
 
-Run this Python from the same directory. The style gives message origins a pale yellow fill and relays a pale blue fill. The PNGs use twice the width and height of the SVGs.
+Run this Python from the same directory. Loading each topology also loads its `.meta.yaml` stylesheet. The PNGs use twice the width and height of the SVGs.
 
 ```python
 from pathlib import Path
 
-from pgure import Stroke, Style, load, save_figure
-
-style = Style(
-    peer_fills={"origin": "#fae9b8", "relay": "#deedf4", "isolated": "#eceff1"},
-    links={"bridge": Stroke("#77583b", dash="4 3")},
-    messages={"reply": Stroke("#a34920", dash="6 3")},
-)
+from pgure import load, save_figure
 
 for source in sorted(Path("examples").glob("*.yaml")):
+    if source.name.endswith(".meta.yaml"):
+        continue
     graph = load(source)
-    save_figure(graph, source.with_suffix(".svg"), style=style)
-    save_figure(graph, source.with_suffix(".png"), style=style, scale=2)
+    save_figure(graph, source.with_suffix(".svg"))
+    save_figure(graph, source.with_suffix(".png"), scale=2)
 ```
 
 See the [YAML figure guide](../docs/figure-yaml.md) for the full set of fields.

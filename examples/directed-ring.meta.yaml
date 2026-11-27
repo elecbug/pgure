@@ -1,0 +1,3 @@
+peers:
+  roles:
+    origin: {fill: "#fae9b8"}
