@@ -1,0 +1,17 @@
+topology Gossip {
+    A -- B, C
+    B -- D
+    C -- D
+
+    A : source
+    B, C : relay
+    D : destination
+
+    view "Via B" {
+        send A -> B -> D : eager
+    }
+
+    view "Via C" {
+        send A -> C -> D : lazy
+    }
+}

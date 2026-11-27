@@ -10,3 +10,17 @@ The design goal is to let researchers define peers and links once in
 Python, then reuse that topology across figures. Keeping node positions
 and visual conventions consistent makes it easier for readers to compare
 message paths, peer roles, and network states.
+
+The [figure language guide](docs/figure-dsl.md) shows how to render the
+same two-panel SVG from a DSL file or a Python topology.
+
+## Local development
+
+With Python 3.10 or later, run these commands from the repository root
+in an active virtual environment. An editable install makes changes in
+`src/pgure/` available the next time you import the package.
+
+```sh
+python -m pip install -e .
+python -c "import pgure"
+```

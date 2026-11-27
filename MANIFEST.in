@@ -1,0 +1,2 @@
+include README.kr.md
+include docs/figure-dsl.md docs/gossip.pgure docs/gossip.svg
