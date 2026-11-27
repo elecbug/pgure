@@ -18,6 +18,9 @@ from pgure import load, save_figure
 save_figure(load("docs/gossip.yaml"), "gossip.svg")
 ```
 
+[예제 모음](examples/README.md)에서 트리 브로드캐스트, 토큰 링, 블록 요청과 응답,
+두 클러스터 사이의 메시지 전달을 YAML과 그림으로 볼 수 있습니다.
+
 PNG, JPEG, WebP는
 `python -m pip install -e '.[raster]'`로 이미지 변환 패키지를 설치한 뒤 파일 확장자를
 선택하면 됩니다. [YAML 그림 가이드](docs/figure-yaml.md)

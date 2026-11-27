@@ -1,0 +1,14 @@
+name: BlockExchange
+peers:
+  - {id: Edge, role: origin}
+  - {id: Relay, role: relay}
+
+links:
+  - {source: Edge, target: Relay}
+  - {source: Relay, target: Seed}
+
+views:
+  - title: Block request and reply
+    messages:
+      - {path: [Edge, Relay, Seed], kind: request, placement: overlay}
+      - {path: [Seed, Relay, Edge], kind: reply, placement: outside}

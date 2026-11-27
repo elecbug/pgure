@@ -1,0 +1,25 @@
+name: Broadcast
+peers:
+  - {id: A, role: origin}
+  - {id: B, role: relay}
+  - {id: C, role: relay}
+
+links:
+  - {source: A, target: B}
+  - {source: A, target: C}
+  - {source: B, target: D}
+  - {source: B, target: E}
+  - {source: C, target: F}
+  - {source: C, target: G}
+
+views:
+  - title: Origin sends
+    messages:
+      - {path: [A, B]}
+      - {path: [A, C]}
+  - title: Relays forward
+    messages:
+      - {path: [B, D]}
+      - {path: [B, E]}
+      - {path: [C, F]}
+      - {path: [C, G]}

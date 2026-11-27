@@ -1,0 +1,18 @@
+name: BridgedClusters
+peers:
+  - {id: A, role: origin}
+  - {id: X, role: isolated}
+
+links:
+  - {source: A, target: B}
+  - {source: B, target: C}
+  - {source: C, target: A}
+  - {source: C, target: D, kind: bridge}
+  - {source: D, target: E}
+  - {source: E, target: F}
+  - {source: F, target: D}
+
+views:
+  - title: Cross-cluster delivery
+    messages:
+      - {path: [A, C, D, F], placement: outside}

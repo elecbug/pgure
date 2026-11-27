@@ -1,0 +1,15 @@
+name: TokenRing
+peers:
+  - {id: A, role: origin}
+
+links:
+  - {source: A, target: B, directed: true}
+  - {source: B, target: C, directed: true}
+  - {source: C, target: D, directed: true}
+  - {source: D, target: E, directed: true}
+  - {source: E, target: A, directed: true}
+
+views:
+  - title: One token rotation
+    messages:
+      - {path: [A, B, C, D, E, A], kind: token}
