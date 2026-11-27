@@ -76,13 +76,44 @@ class StylesheetTests(unittest.TestCase):
         for rule, field in [("width: -1", "width"), ("width: true", "width"),
                             ("width: .nan", "width"), ("line: broken", "line"),
                             ("line: [0, 0]", "line"), ("color: null", "color"),
-                            ("colour: red", "colour")]:
+                            ("colour: red", "colour"), ("placement: side", "placement"),
+                            ("placement: null", "placement")]:
             with self.subTest(rule=rule), self.assertRaises(FigureError) as caught:
                 self.meta.write_text(f"links:\n  kinds:\n    bridge:\n      {rule}\n", encoding="utf-8")
                 load(self.source)
             self.assertEqual(caught.exception.source, str(self.meta))
             self.assertEqual(caught.exception.path, ("links", "kinds", "bridge", field))
             self.assertEqual(caught.exception.line, 4)
+
+    def test_placement_cascade_is_resolved_per_hop(self):
+        self.source.write_text("""name: T
+links: [{source: A, target: B, kind: bridge}, {source: B, target: C}]
+views:
+  - {title: Delivery, messages: [{path: [A, B, C], kind: delivery}]}
+  - {title: Reply, messages: [{path: [C, B, A], kind: reply}]}
+  - {title: Automatic, messages: [{path: [A, B, C], kind: retry}]}
+""", encoding="utf-8")
+        sheet = """links:
+  default: {placement: outside}
+  kinds: {bridge: {placement: outside}}
+messages:
+  default: {placement: overlay}
+  kinds:
+    delivery: {color: teal}
+    reply: {placement: overlay}
+    retry: {placement: auto}
+"""
+
+        def placements(text):
+            self.meta.write_text(text, encoding="utf-8")
+            svg = ET.fromstring(render_svg(load(self.source)))
+            return [[path.get("data-placement") for path in panel.findall(".//{*}path[@data-placement]")]
+                    for panel in svg.findall("{*}g[@class='panel']")]
+
+        self.assertEqual(placements(sheet), [["outside", "overlay"], ["overlay", "overlay"],
+                                             ["overlay", "overlay"]])
+        self.assertEqual(placements(sheet.replace("  default: {placement: overlay}\n", ""))[0],
+                         ["outside", "outside"])
 
     def test_named_lines_and_zero_width(self):
         for name, pattern in [("-", None), ("solid", None), ("--", "6 3"), ("dashed", "6 3"),

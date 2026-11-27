@@ -11,8 +11,9 @@ Python, then reuse that topology across figures. Keeping node positions
 and visual conventions consistent makes it easier for readers to compare
 message paths, peer roles, and network states.
 
-Describe the peers, links, and message paths in YAML. Put colors, widths, and line
-patterns in a companion file such as `gossip.meta.yaml`. Loading the figure applies the stylesheet.
+Describe the peers, links, and message paths in YAML. Put colors, widths, line
+patterns, and arrow placement in a companion file such as `gossip.meta.yaml`.
+Loading the figure applies the stylesheet.
 
 ```python
 from pgure import load, save_figure

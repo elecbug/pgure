@@ -8,8 +8,6 @@ from types import MappingProxyType
 
 from .style import Style
 
-PLACEMENTS = ("overlay", "outside")
-
 
 def _identifier(value: str) -> str:
     if (not isinstance(value, str) or not value or not value.isprintable()
@@ -20,11 +18,10 @@ def _identifier(value: str) -> str:
 
 @dataclass(frozen=True)
 class Message:
-    """One path, with an optional message class and placement relative to its links."""
+    """One path in transmission order, with an optional message class."""
 
     path: tuple[str, ...]
     kind: str | None = None
-    placement: str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.path, str):
@@ -35,8 +32,6 @@ class Message:
         object.__setattr__(self, "path", path)
         if self.kind is not None:
             _identifier(self.kind)
-        if self.placement is not None and self.placement not in PLACEMENTS:
-            raise ValueError(f"unknown message placement {self.placement!r}; expected overlay or outside")
 
 
 @dataclass(frozen=True)

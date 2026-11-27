@@ -5,4 +5,5 @@ peers:
 
 messages:
   kinds:
-    reply: {color: "#a34920", line: "--"}
+    request: {placement: overlay}
+    reply: {color: "#a34920", line: "--", placement: outside}

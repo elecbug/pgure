@@ -8,7 +8,7 @@ links:
 views:
   - title: On the link
     messages:
-      - {path: [A, B, D], placement: overlay}
+      - {path: [A, B, D], kind: request}
   - title: Outside the link
     messages:
-      - {path: [A, B, D], placement: outside}
+      - {path: [A, B, D], kind: retry}

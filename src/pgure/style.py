@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 
 INK = "#213547"
+PLACEMENTS = ("auto", "overlay", "outside")
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,11 @@ class Stroke:
     dash: str = ""
     width: float | None = None
     round_caps: bool = False
+    placement: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.placement is not None and self.placement not in PLACEMENTS:
+            raise ValueError("placement must be auto, overlay, or outside")
 
 
 @dataclass(frozen=True)
@@ -33,3 +39,12 @@ class Style:
     peer_default: PeerStyle = PeerStyle()
     link_default: Stroke = Stroke("#778794", width=1.4)
     message_default: Stroke = Stroke("#145f91", width=2.5)
+
+    def placement_for(self, message_kind: str | None, link_kind: str | None) -> str:
+        """Resolve one hop, checking kind rules before category defaults."""
+        message = self.messages.get(message_kind) if message_kind is not None else None
+        link = self.links.get(link_kind) if link_kind is not None else None
+        for rule in (message, link, self.message_default, self.link_default):
+            if rule is not None and rule.placement is not None:
+                return rule.placement
+        return "auto"

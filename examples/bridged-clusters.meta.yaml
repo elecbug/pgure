@@ -4,5 +4,6 @@ peers:
     isolated: {fill: "#eceff1"}
 
 links:
+  default: {placement: outside}
   kinds:
     bridge: {color: "#77583b", line: "--", width: 2}

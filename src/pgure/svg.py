@@ -179,10 +179,14 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
             stroke = style.links.get(link.kind, style.link_default) if link.kind else style.link_default
             _edge(group, positions[link.source], positions[link.target], radius, stroke,
                   arrow=link.directed, bend=bends[link.source, link.target])
-        uses = Counter(links_by_hop[hop] for route in view.messages
-                       for hop in zip(route.path, route.path[1:]))
-        occupied = {links_by_hop[hop] for route in view.messages if route.placement == "overlay"
-                    for hop in zip(route.path, route.path[1:])}
+        uses = Counter()
+        occupied = set()
+        for route in view.messages:
+            for hop in zip(route.path, route.path[1:]):
+                link = links_by_hop[hop]
+                uses[link] += 1
+                if style.placement_for(route.kind, link.kind) == "overlay":
+                    occupied.add(link)
         outside_count = Counter()
         for route in view.messages:
             group = ET.SubElement(panel, "g", {"class": "message", "data-path": " ".join(route.path)})
@@ -191,7 +195,9 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
             stroke = style.messages.get(route.kind, style.message_default) if route.kind else style.message_default
             for a, b in zip(route.path, route.path[1:]):
                 link = links_by_hop[a, b]
-                placement = route.placement or ("outside" if link in occupied else "overlay")
+                placement = style.placement_for(route.kind, link.kind)
+                if placement == "auto":
+                    placement = "outside" if link in occupied else "overlay"
                 bend = bends[a, b]
                 if placement == "outside":
                     distance = 30 + 26 * outside_count[link] / max(1, uses[link] - 1)

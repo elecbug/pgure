@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from pgure import FigureError, Message, Stroke, Style, Topology, from_dict, load, parse, render_svg
+from pgure import FigureError, Message, Stroke, Style, Topology, from_dict, load, load_style, parse, render_svg
 
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
@@ -95,10 +95,15 @@ views:
             "name: T\nlinks: [{source: A}]", "name: T\nlinks: [{source: A, target: B, directed: 'false'}]",
             "name: T\nviews: [{title: 1}]", "name: T\nviews: [{title: Test, messages: [{path: AB}]}]",
             "name: T\nviews: [{title: Test, messages: [{path: [A]}]}]",
-            "name: T\nviews: [{title: Test, messages: [{path: [A, B], placement: side}]}]",
         ]:
             with self.subTest(source=source), self.assertRaises(FigureError):
                 parse(source)
+
+    def test_inline_placement_points_to_the_stylesheet(self):
+        source = "name: T\nlinks: [{source: A, target: B}]\nviews: [{title: V, messages: [{path: [A, B], placement: outside}]}]"
+        with self.assertRaisesRegex(FigureError, r"\.meta\.yaml") as raised:
+            parse(source)
+        self.assertEqual(raised.exception.path, ("views", 0, "messages", 0, "placement"))
 
     def test_mapping_and_yaml_load_the_same_data(self):
         peers = [{"id": "B", "role": "relay"}]
@@ -152,9 +157,10 @@ links:
   - {source: C, target: D, directed: true}
 views:
   - title: V
-    messages: [{path: [D, B], placement: overlay}, {path: [C, D], placement: overlay}]
+    messages: [{path: [D, B], kind: request}, {path: [C, D], kind: request}]
 """)
-        panel = ET.fromstring(render_svg(graph)).find("s:g[@class='panel']", SVG)
+        style = load_style(DOCS / "message-placement.meta.yaml")
+        panel = ET.fromstring(render_svg(graph, style=style)).find("s:g[@class='panel']", SVG)
 
         def points(path):
             return re.findall(r"[-\d.]+,[-\d.]+", path.get("d"))
@@ -173,12 +179,13 @@ views:
   - title: V
     messages:
       - {path: [B, A]}
-      - {path: [A, B], placement: outside}
-      - {path: [A, B], placement: overlay}
-      - {path: [A, B], placement: overlay}
+      - {path: [A, B], kind: retry}
+      - {path: [A, B], kind: request}
+      - {path: [A, B], kind: request}
   - {title: W, messages: [{path: [A, B]}]}
 """)
-        paths = ET.fromstring(render_svg(graph)).findall(".//s:path[@data-placement]", SVG)
+        style = load_style(DOCS / "message-placement.meta.yaml")
+        paths = ET.fromstring(render_svg(graph, style=style)).findall(".//s:path[@data-placement]", SVG)
         self.assertEqual([p.get("data-placement") for p in paths],
                          ["outside", "outside", "overlay", "overlay", "overlay"])
         self.assertEqual(len({p.get("d") for p in paths[2:]}), 1)

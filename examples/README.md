@@ -98,8 +98,8 @@ links:
 views:
   - title: Block request and reply
     messages:
-      - {path: [Edge, Relay, Seed], kind: request, placement: overlay}
-      - {path: [Seed, Relay, Edge], kind: reply, placement: outside}
+      - {path: [Edge, Relay, Seed], kind: request}
+      - {path: [Seed, Relay, Edge], kind: reply}
 ```
 
 </details>
@@ -133,7 +133,7 @@ links:
 views:
   - title: Cross-cluster delivery
     messages:
-      - {path: [A, C, D, F], placement: outside}
+      - {path: [A, C, D, F]}
 ```
 
 </details>

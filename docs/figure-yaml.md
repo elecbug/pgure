@@ -48,7 +48,7 @@ save_figure(gossip, "gossip.svg")
 | `peers` | List of mappings | Each entry has an `id` and an optional `role`. Declare isolated peers here. Link endpoints also declare peers. |
 | `links` | List of mappings | Each link has a `source` and `target`. Set `directed: true` for a one-way link. The default is undirected. The optional `kind` selects a link class. |
 | `views` | List of mappings | Each view has a string `title` and an optional list of `messages`. Panels appear in list order. Titles may repeat. |
-| `messages` entry | Mapping | A `path` of at least two peer IDs is required. Optional fields are `kind` for the message class and `placement` for its position relative to each link. |
+| `messages` entry | Mapping | A `path` of at least two peer IDs is required. The optional `kind` identifies the message class. |
 
 Identifiers, roles, and classes are nonempty printable strings without whitespace. Quote IDs such as `"42"` and `"true"` so YAML reads them as strings. Titles may contain spaces and Unicode text. Use a YAML boolean for `directed`. Field order within mappings is free. Omitted lists default to empty lists.
 
@@ -78,7 +78,7 @@ The renderer places each connected component in breadth-first columns from its a
 
 ![The same route drawn on the links in the left panel and outside them in the right panel.](message-placement.svg)
 
-Set `placement: overlay` on a message to follow the link centerline, or `placement: outside` to draw a separate arc between the same peers. Placement applies to every hop of that message. Within each view, the first use of a link takes the centerline by default and additional uses go outside. An explicit overlay reserves the centerline even if it occurs later. An explicit outside arc leaves the centerline available. On straight links the arc bends away from the layout center, or to the right of travel when the center lies on the link axis. On curved links it follows the existing bend. [Download the placement comparison](message-placement.yaml).
+The paths in these two views visit the same peers. Their stylesheet draws the request on the links and the retry on separate arcs. [Topology](message-placement.yaml) · [Placement stylesheet](message-placement.meta.yaml)
 
 ### Companion stylesheets
 
@@ -92,10 +92,10 @@ peers:
 links:
   default: {color: "#778794", line: solid}
   kinds:
-    bridge: {line: "--", width: 2}
+    bridge: {line: "--", width: 2, placement: outside}
 messages:
   kinds:
-    lazy: {color: "#995321", line: dotted}
+    lazy: {color: "#995321", line: dotted, placement: overlay}
 ```
 
 Rules inherit individual properties. Built-in values apply first, then the category's `default`, then the matching peer role or link/message kind. In the example, a bridge inherits the default link color and overrides its line pattern and width. Untagged objects and unmatched names use the category default. Each section is optional.
@@ -103,12 +103,22 @@ Rules inherit individual properties. Built-in values apply first, then the categ
 | Section | Select by | Properties |
 | --- | --- | --- |
 | `peers` | `roles` | `fill` for the interior, `stroke` for the border color, `width` and `line` for the border, `label_color` for the peer ID |
-| `links` | `kinds` | `color`, `width`, `line` |
-| `messages` | `kinds` | `color`, `width`, `line` |
+| `links` | `kinds` | `color`, `width`, `line`, `placement` for messages using this link |
+| `messages` | `kinds` | `color`, `width`, `line`, `placement` for the message's hops |
 
 Use SVG color strings and quote hex colors so YAML preserves the leading `#`. Widths are nonnegative numbers in SVG units. The named line patterns are `solid`, `dashed`, `dotted`, and `dash-dot`. Their short forms are `"-"`, `"--"`, `":"`, and `"-."`. For a custom pattern, use a sequence such as `line: [8, 3, 2, 3]` to alternate painted and empty lengths.
 
 To share one stylesheet across files, use `load("network.yaml", meta="themes/paper.meta.yaml")`. An explicit path selects that stylesheet in place of the companion. For a topology constructed in memory, pass `load_style("themes/paper.meta.yaml")` as the `style` argument to `render_svg` or `save_figure`. An explicit `style` argument takes precedence for that render.
+
+#### Placing arrows on links
+
+For each hop, `overlay` draws the message directly on the link centerline. `outside` draws an arc between the same two peers. On straight links the arc bends away from the layout center, or to the right of travel when the center lies on the link axis. On curved links it follows the existing bend.
+
+The renderer checks the message kind, link kind, message default, and link default in that order. The first rule that declares `placement` wins. For the stylesheet above, an unclassified message curves outside only when crossing a bridge. A lazy message follows the centerline even on the bridge.
+
+The fallback is `auto`. Within each view the first automatic use of a link takes the centerline and further uses go outside. An explicit overlay reserves the centerline even when declared later. Outside arcs leave it available. Setting `placement: auto` on a more specific rule restores this behavior.
+
+To migrate an inline `placement`, keep the message's `path` and `kind` in the topology and move the value into `messages.kinds.<kind>` in its companion stylesheet. Use a category's `default` for a figure-wide convention.
 
 ## Saving a figure
 

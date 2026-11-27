@@ -11,7 +11,7 @@ from ruamel.yaml import YAML, YAMLError
 from ruamel.yaml.nodes import MappingNode, SequenceNode
 
 from .model import Message, Topology, _RouteError, _identifier
-from .style import PeerStyle, Stroke, Style
+from .style import PLACEMENTS, PeerStyle, Stroke, Style
 
 
 _Path = tuple[str | int, ...]
@@ -93,9 +93,12 @@ def from_dict(data: Mapping) -> Topology:
             raise FigureError("expected a string", (*at, "title"))
         messages = []
         for entry, message_at in _records(view, "messages", at, ("path",), ("kind", "placement")):
+            if "placement" in entry:
+                raise FigureError("move placement to the companion .meta.yaml under messages or links",
+                                  (*message_at, "placement"))
             path = _sequence(entry["path"], (*message_at, "path"))
             with _at(message_at):
-                messages.append(Message(tuple(path), entry.get("kind"), entry.get("placement")))
+                messages.append(Message(tuple(path), entry.get("kind")))
         try:
             graph.add_view(title, messages)
         except _RouteError as error:
@@ -139,16 +142,20 @@ def _color(data, field, default, path):
     return color
 
 
-def _stroke(data, base, path, color_field):
+def _stroke(data, base, path, color_field, *, placement=None):
     color = _color(data, color_field, base.color, path)
     width = _number(data["width"], (*path, "width")) if "width" in data else base.width
     dash, round_caps = _line(data["line"], (*path, "line")) if "line" in data else (base.dash, base.round_caps)
-    return Stroke(color, dash, width, round_caps)
+    return Stroke(color, dash, width, round_caps, placement=placement)
 
 
 def _edge_rule(data, base, path):
-    _record(data, path, (), ("color", "width", "line"))
-    return _stroke(data, base, path, "color")
+    _record(data, path, (), ("color", "width", "line", "placement"))
+    placement = data.get("placement")
+    if "placement" in data and placement not in PLACEMENTS:
+        raise FigureError("expected auto, overlay, or outside", (*path, "placement"))
+    # Placement depends on both the message and its current link, so resolve it per hop.
+    return _stroke(data, base, path, "color", placement=placement)
 
 
 def _peer_rule(data, base, path):

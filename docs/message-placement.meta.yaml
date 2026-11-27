@@ -1,0 +1,4 @@
+messages:
+  kinds:
+    request: {placement: overlay}
+    retry: {placement: outside}

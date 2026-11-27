@@ -15,4 +15,4 @@ links:
 views:
   - title: Cross-cluster delivery
     messages:
-      - {path: [A, C, D, F], placement: outside}
+      - {path: [A, C, D, F]}

@@ -17,7 +17,7 @@ class ExportTests(unittest.TestCase):
 name: T
 peers: [{id: A, role: source}]
 links: [{source: A, target: B}]
-views: [{title: Route, messages: [{path: [A, B], placement: outside}]}]
+views: [{title: Route, messages: [{path: [A, B]}]}]
 """)
         self.style = Style(peer_fills={"source": "#ff8800"})
 
