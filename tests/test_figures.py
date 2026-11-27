@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from pgure import DSLError, Message, Stroke, Style, Topology, load, parse, render_svg
+from pgure import FigureError, Message, Stroke, Style, Topology, from_dict, load, parse, render_svg
 
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
@@ -12,27 +12,17 @@ SVG = {"s": "http://www.w3.org/2000/svg"}
 
 
 class DescriptionTests(unittest.TestCase):
-    def test_fanout_placement_and_validation(self):
-        graph = parse('topology T { A -- outside, C\nview "V" { send A -> outside, C : probe @outside } }')
-        self.assertEqual(graph.views[0].messages, (
-            Message(("A", "outside"), "probe", placement="outside"),
-            Message(("A", "C"), "probe", placement="outside"),
-        ))
-        with self.assertRaisesRegex(DSLError, "2:27 in view 'V': unknown placement"):
-            parse('topology T { A -- B\nview "V" { send A -> B   @side } }')
-        with self.assertRaisesRegex(DSLError, "no link for hop B -> A"):
-            parse('topology T { A -> B\nview "V" { send B -> A @outside } }')
-        with self.assertRaisesRegex(ValueError, "unknown message placement"):
-            Message(("A", "B"), placement="side")
-
     def test_forward_references_and_fanout(self):
-        graph = parse('''topology T {
-    view "First" { send A -> B, C : lazy }
-    B, C : relay
-    A -> B, C : mesh
-    node E
-    view "First" {}
-}''')
+        graph = parse("""
+views:
+  - {title: First, messages: [{path: [A, B], kind: lazy}, {path: [A, C], kind: lazy}]}
+  - {title: First}
+links:
+  - {source: A, target: B, directed: true, kind: mesh}
+  - {source: A, target: C, directed: true, kind: mesh}
+peers: [{id: B, role: relay}, {id: C, role: relay}, {id: E}]
+name: T
+""")
         self.assertEqual(graph.peers, {"A": None, "B": "relay", "C": "relay", "E": None})
         self.assertEqual([link.kind for link in graph.links], ["mesh", "mesh"])
         first, second = graph.views
@@ -40,64 +30,86 @@ class DescriptionTests(unittest.TestCase):
         self.assertEqual(first.title, second.title)
         self.assertEqual(second.messages, ())
 
-    def test_duplicate_links_roles_and_default_view(self):
-        graph = parse("topology T {\nnode A, A\nA -- B\nB -- A : mesh\nA -- B\nB : relay\nB : relay\n}")
+    def test_duplicate_declarations_and_default_view(self):
+        graph = parse("""
+name: T
+peers: [{id: A}, {id: A}, {id: B, role: relay}, {id: B, role: relay}]
+links: [{source: A, target: B}, {source: B, target: A, kind: mesh}, {source: A, target: B}]
+""")
         self.assertEqual(len(graph.links), 1)
         self.assertEqual(graph.links[0].kind, "mesh")
         self.assertEqual(graph.views[0].title, "T")
         self.assertFalse(graph.views[0].messages)
 
-    def test_strings_comments_and_line_endings(self):
-        source = r'''topology T {
-  node N   # an isolated peer
-  view "단계 #1 \"OK\" \\ <&>" {}
-}'''.replace("\n", "\r\n")
+    def test_yaml_strings_comments_and_identifiers(self):
+        source = r'''name: view
+peers: [{id: peer-1}, {id: on}, {id: "42"}, {id: 피어}]  # isolated peers
+views:
+  - title: '단계 #1 "OK" \ <&>'
+'''.replace("\n", "\r\n")
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "example.pgure"
+            path = Path(directory) / "example.yml"
             path.write_bytes(source.encode())
             graph = load(path)
-        expected = '단계 #1 "OK" \\ <&>'
-        self.assertEqual(graph.views[0].title, expected)
-        self.assertEqual(ET.fromstring(render_svg(graph)).find(".//s:text", SVG).text, expected)
+        self.assertEqual(set(graph.peers), {"peer-1", "on", "42", "피어"})
+        self.assertEqual(graph.views[0].title, '단계 #1 "OK" \\ <&>')
+        self.assertEqual(ET.fromstring(render_svg(graph)).find(".//s:text", SVG).text, graph.views[0].title)
 
     def test_conflicting_links_and_annotations(self):
-        for declarations in [
-            "A -- B\nA -> B", "B -> A\nA -- B", "A -- A", "A -> A",
-            "A -- B : first\nB -- A : second", "node A\nA : source\nA : relay",
+        for fragment in [
+            "links: [{source: A, target: B}, {source: B, target: A, directed: true}]",
+            "links: [{source: A, target: A}]",
+            "links: [{source: A, target: B, kind: x}, {source: B, target: A, kind: y}]",
+            "peers: [{id: A, role: source}, {id: A, role: relay}]",
         ]:
-            with self.subTest(declarations=declarations), self.assertRaises(DSLError):
-                parse("topology T {\n" + declarations + "\n}")
-        graph = parse("topology T {\nA -> B : x\nB -> A : y\n}")
-        self.assertEqual([link.kind for link in graph.links], ["x", "y"])
+            with self.subTest(fragment=fragment), self.assertRaises(FigureError):
+                parse("name: T\n" + fragment)
 
-    def test_semantic_diagnostics_pinpoint_the_use(self):
-        for statement, column, detail in [
-            ("send B -> A", 10, "B -> A"),
-            ("send A -> B -> C", 15, "B -> C"),
-            ("send A -> B, X", 18, "unknown peer 'X'"),
+    def test_bad_hop_reports_field_and_source_position(self):
+        source = """name: T
+peers: [{id: C}]
+links: [{source: A, target: B, directed: true}]
+views:
+  - title: Round
+    messages:
+      - path: [A, B, C]
+"""
+        for path, peer_index, column, detail in [
+            ("A, B, C", 1, 19, "B -> C"),
+            ("B, A", 0, 16, "B -> A"),
+            ("A, B, X", 2, 22, "unknown peer 'X'"),
         ]:
-            with self.subTest(statement=statement):
-                source = 'topology T {\nnode C\nview "Round" {\n    ' + statement + "\n}\nA -> B\n}"
-                with self.assertRaises(DSLError) as raised:
-                    parse(source, source="case.pgure")
-                error = raised.exception
-                self.assertEqual((error.source, error.line, error.column, error.view),
-                                 ("case.pgure", 4, column, "Round"))
-                self.assertIn(detail, str(error))
-        with self.assertRaisesRegex(DSLError, "unknown peer 'X'"):
-            parse("topology T { X : relay }")
+            with self.subTest(path=path), self.assertRaises(FigureError) as raised:
+                parse(source.replace("A, B, C", path), source="case.yaml")
+            error = raised.exception
+            self.assertEqual((error.source, error.line, error.column), ("case.yaml", 7, column))
+            self.assertEqual(error.path, ("views", 0, "messages", 0, "path", peer_index))
+            self.assertIn("Round", str(error))
+            self.assertIn(detail, str(error))
 
-    def test_syntax_errors(self):
+    def test_invalid_yaml_and_document_shapes(self):
         for source in [
-            "", "topology T {}", "topology view { node A }", "topology T { node A node B }",
-            "topology T { node A; }", "topology T { node A", "topology T { send A -> B }",
-            'topology T { view "V" { send A -> B -> C, D } }',
-            'topology T { view "V" { send A -> B, C -> D } }',
-            r'topology T { view "bad\q" {} }', 'topology T { view "unfinished }',
-            "topology T { node A }\ntopology U { node B }",
+            "", "[]", "name: [", "name: T", "name: T\nname: U\npeers: [{id: A}]",
+            "name: T\n---\nname: U", "!!python/name:builtins.str", "name: T\nnodes: [A]",
+            "name: T\npeers: A", "name: T\npeers: [true]", "name: T\npeers: [{id: 42}]",
+            "name: T\nlinks: [{source: A}]", "name: T\nlinks: [{source: A, target: B, directed: 'false'}]",
+            "name: T\nviews: [{title: 1}]", "name: T\nviews: [{title: Test, messages: [{path: AB}]}]",
+            "name: T\nviews: [{title: Test, messages: [{path: [A]}]}]",
+            "name: T\nviews: [{title: Test, messages: [{path: [A, B], placement: side}]}]",
         ]:
-            with self.subTest(source=source), self.assertRaises(DSLError):
+            with self.subTest(source=source), self.assertRaises(FigureError):
                 parse(source)
+
+    def test_mapping_and_yaml_load_the_same_data(self):
+        peers = [{"id": "B", "role": "relay"}]
+        data = {"name": "T", "peers": peers, "links": [{"source": "A", "target": "B"}]}
+        graph = from_dict(data)
+        yaml_graph = parse("name: T\npeers: [{id: B, role: relay}]\nlinks: [{source: A, target: B}]")
+        self.assertEqual(render_svg(graph), render_svg(yaml_graph))
+        self.assertEqual(peers, [{"id": "B", "role": "relay"}])
+        with self.assertRaises(FigureError) as raised:
+            from_dict({"name": "T", "links": [{}]})
+        self.assertEqual(raised.exception.path, ("links", 0, "source"))
 
     def test_failed_python_updates_preserve_existing_topology(self):
         graph = Topology("T")
@@ -113,9 +125,7 @@ class DescriptionTests(unittest.TestCase):
 
 class RenderTests(unittest.TestCase):
     def test_placement_guide_overlay_and_outward_arc(self):
-        guide = (DOCS / "figure-dsl.md").read_text(encoding="utf-8")
-        source = guide.split("```text\ntopology Placement", 1)[1].split("```", 1)[0]
-        svg = render_svg(parse("topology Placement" + source))
+        svg = render_svg(load(DOCS / "message-placement.yaml"))
         self.assertEqual(svg, (DOCS / "message-placement.svg").read_text(encoding="utf-8"))
         overlay, outside = ET.fromstring(svg).findall("s:g[@class='panel']", SVG)
         base = {(g.get("data-source"), g.get("data-target")): g[0].get("d")
@@ -132,15 +142,18 @@ class RenderTests(unittest.TestCase):
             self.assertLess(control_y(arc), control_y(along))
 
     def test_overlay_on_curved_links_in_either_direction(self):
-        graph = parse('''topology T {
-    A -- B, C, D
-    B -- D
-    C -> D
-    view "V" {
-        send D -> B @overlay
-        send C -> D @overlay
-    }
-}''')
+        graph = parse("""
+name: T
+links:
+  - {source: A, target: B}
+  - {source: A, target: C}
+  - {source: A, target: D}
+  - {source: B, target: D}
+  - {source: C, target: D, directed: true}
+views:
+  - title: V
+    messages: [{path: [D, B], placement: overlay}, {path: [C, D], placement: overlay}]
+""")
         panel = ET.fromstring(render_svg(graph)).find("s:g[@class='panel']", SVG)
 
         def points(path):
@@ -153,16 +166,18 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(points(forward), links["C", "D"])
 
     def test_explicit_overlays_reserve_the_link_for_both_directions(self):
-        graph = parse('''topology T {
-    A -- B
-    view "V" {
-        send B -> A
-        send A -> B @outside
-        send A -> B @overlay
-        send A -> B @overlay
-    }
-    view "W" { send A -> B }
-}''')
+        graph = parse("""
+name: T
+links: [{source: A, target: B}]
+views:
+  - title: V
+    messages:
+      - {path: [B, A]}
+      - {path: [A, B], placement: outside}
+      - {path: [A, B], placement: overlay}
+      - {path: [A, B], placement: overlay}
+  - {title: W, messages: [{path: [A, B]}]}
+""")
         paths = ET.fromstring(render_svg(graph)).findall(".//s:path[@data-placement]", SVG)
         self.assertEqual([p.get("data-placement") for p in paths],
                          ["outside", "outside", "overlay", "overlay", "overlay"])
@@ -170,9 +185,9 @@ class RenderTests(unittest.TestCase):
 
     def test_guide_examples_and_svg_match(self):
         # Keep the figure, downloadable source, and guide example in sync.
-        guide = (DOCS / "figure-dsl.md").read_text(encoding="utf-8")
-        code = guide.split("```text\n", 1)[1].split("```", 1)[0]
-        self.assertEqual(code, (DOCS / "gossip.pgure").read_text(encoding="utf-8"))
+        guide = (DOCS / "figure-yaml.md").read_text(encoding="utf-8")
+        code = guide.split("```yaml\n", 1)[1].split("```", 1)[0]
+        self.assertEqual(code, (DOCS / "gossip.yaml").read_text(encoding="utf-8"))
         graph = parse(code)
         network = Topology("Gossip")
         for a, b in [("A", "B"), ("A", "C"), ("B", "D"), ("C", "D")]:
@@ -197,16 +212,19 @@ class RenderTests(unittest.TestCase):
         self.assertIsNotNone(panels[1].find(".//s:path[@stroke-dasharray='6 3']", SVG))
 
     def test_direction_markers_style_and_repeated_messages(self):
-        graph = parse('''topology T {
-    A -> B : up
-    B -> A : down
-    A : source
-    view "Both" {
-        send A -> B : normal
-        send A -> B : retry
-        send B -> A : normal
-    }
-}''')
+        graph = parse("""
+name: T
+peers: [{id: A, role: source}]
+links:
+  - {source: A, target: B, directed: true, kind: up}
+  - {source: B, target: A, directed: true, kind: down}
+views:
+  - title: Both
+    messages:
+      - {path: [A, B], kind: normal}
+      - {path: [A, B], kind: retry}
+      - {path: [B, A], kind: normal}
+""")
         style = Style(peer_fills={"source": "gold"}, links={"up": Stroke("black", "2 1")},
                       messages={"retry": Stroke("brown")})
         svg = ET.fromstring(render_svg(graph, style=style))

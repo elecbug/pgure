@@ -11,9 +11,17 @@ Python, then reuse that topology across figures. Keeping node positions
 and visual conventions consistent makes it easier for readers to compare
 message paths, peer roles, and network states.
 
-Save figures with `save_figure(topology, "figure.svg")`. For PNG, JPEG, or WebP,
+Describe the peers, links, and message paths in YAML, then load and save the figure.
+
+```python
+from pgure import load, save_figure
+
+save_figure(load("docs/gossip.yaml"), "gossip.svg")
+```
+
+For PNG, JPEG, or WebP,
 install the raster extra with `python -m pip install -e '.[raster]'` and use
-the desired filename extension. See the [figure language guide](docs/figure-dsl.md#saving-a-figure).
+the desired filename extension. See the [YAML figure guide](docs/figure-yaml.md).
 
 ## Local development
 

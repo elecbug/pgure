@@ -1,20 +1,18 @@
-"""Shared topology and message model for Python and DSL figures."""
+"""Shared topology and message model for Python and YAML figures."""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
 
-IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-KEYWORDS = {"topology", "node", "view", "send"}
 PLACEMENTS = ("overlay", "outside")
 
 
 def _identifier(value: str) -> str:
-    if not IDENTIFIER.fullmatch(value) or value in KEYWORDS:
+    if (not isinstance(value, str) or not value or not value.isprintable()
+            or any(char.isspace() for char in value)):
         raise ValueError(f"invalid identifier {value!r}")
     return value
 
@@ -55,7 +53,7 @@ class View:
 
 
 class _RouteError(ValueError):
-    """Indexes identify the offending token in the original send statement."""
+    """Indexes identify the offending message and peer within its view."""
 
     def __init__(self, detail: str, message_index: int, peer_index: int):
         super().__init__(detail)

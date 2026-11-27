@@ -1,0 +1,20 @@
+name: Gossip
+peers:
+  - {id: A, role: source}
+  - {id: B, role: relay}
+  - {id: C, role: relay}
+  - {id: D, role: destination}
+
+links:
+  - {source: A, target: B}
+  - {source: A, target: C}
+  - {source: B, target: D}
+  - {source: C, target: D}
+
+views:
+  - title: Via B
+    messages:
+      - {path: [A, B, D], kind: eager}
+  - title: Via C
+    messages:
+      - {path: [A, C, D], kind: lazy}

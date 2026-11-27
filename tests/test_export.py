@@ -13,7 +13,12 @@ class ExportTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.directory = Path(directory.name)
-        self.graph = parse('topology T { A -- B\nA : source\nview "Route" { send A -> B @outside } }')
+        self.graph = parse("""
+name: T
+peers: [{id: A, role: source}]
+links: [{source: A, target: B}]
+views: [{title: Route, messages: [{path: [A, B], placement: outside}]}]
+""")
         self.style = Style(peer_fills={"source": "#ff8800"})
 
     def test_svg_file_and_scaled_viewport(self):

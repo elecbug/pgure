@@ -1,0 +1,14 @@
+name: Placement
+links:
+  - {source: A, target: B}
+  - {source: A, target: C}
+  - {source: B, target: D}
+  - {source: C, target: D}
+
+views:
+  - title: On the link
+    messages:
+      - {path: [A, B, D], placement: overlay}
+  - title: Outside the link
+    messages:
+      - {path: [A, B, D], placement: outside}
