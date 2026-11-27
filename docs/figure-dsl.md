@@ -31,15 +31,14 @@ topology Gossip {
 After installing P-Gure, run the following Python from the repository root to reproduce this figure. The input file is [gossip.pgure](gossip.pgure).
 
 ```python
-from pathlib import Path
-from pgure import Stroke, Style, load, render_svg
+from pgure import Stroke, Style, load, save_figure
 
 gossip = load("docs/gossip.pgure")
 style = Style(messages={
     "eager": Stroke("#145f91"),
     "lazy": Stroke("#995321", dash="6 3"),
 })
-Path("gossip.svg").write_text(render_svg(gossip, style=style), encoding="utf-8")
+save_figure(gossip, "gossip.svg", style=style)
 ```
 
 ## Peers, links, and views
@@ -54,6 +53,8 @@ Path("gossip.svg").write_text(render_svg(gossip, style=style), encoding="utf-8")
 | `view "Round 1" { … }` | Add a panel showing the entire topology. |
 | `send A -> B -> D : eager` | Draw one path with two hops. Both hops share the message class `eager`. |
 | `send A -> B, C : lazy` | Draw two single-hop paths, one from A to B and one from A to C. |
+| `send A -> B : eager @overlay` | Draw the message arrow directly on its peer link. |
+| `send A -> B : eager @outside` | Draw the same hop on a separate arc. |
 
 Peer roles, link classes, and message classes have separate namespaces. Each peer can have one role, each link one class, and each message one class. Authors choose these names. A role declaration can precede the peer it references, and a view can precede its links. The parser resolves these references over the entire topology.
 
@@ -70,8 +71,9 @@ nodes      = "node" names
 role       = names ":" id
 link       = id ("--" | "->") names tag?
 view       = "view" string "{" NL* (send (NL+ send)* NL*)? "}"
-send       = "send" id "->" id (("->" id)+ | ("," id)+)? tag?
+send       = "send" id "->" id (("->" id)+ | ("," id)+)? tag? placement?
 tag        = ":" id
+placement  = "@" ("overlay" | "outside")
 names      = id ("," id)*
 ```
 
@@ -121,4 +123,45 @@ The SVG renderer computes coordinates once from the base topology. It lays out e
 
 Pass a `Style` to `render_svg` to reuse the same drawing conventions across figures. `peer_fills` maps roles to fill colors. `links` and `messages` map classes to `Stroke` objects with a color and an optional SVG dash pattern. Unmapped classes use their category's default appearance.
 
-The v0.1 output format is SVG. Weights, groups, layers, manual coordinates, external style files, and PDF output are topics for later versions.
+### Place a message on or outside its link
+
+Both panels below show the same transmission, with the same peers, color, and line pattern. On the left the blue arrow follows the exact centerline of the peer link. On the right a separate arc leaves the gray link visible.
+
+![The same A-to-B-to-D message drawn on the upper links in the left panel and curving outside those links in the right panel.](message-placement.svg)
+
+```text
+topology Placement {
+    A -- B, C
+    B -- D
+    C -- D
+
+    view "On the link" { send A -> B -> D @overlay }
+    view "Outside the link" { send A -> B -> D @outside }
+}
+```
+
+Placement applies to every hop in the send, including each branch of a fan-out. Both modes use the declared links and their transmission directions. In Python, use `Message(("A", "B", "D"), placement="outside")`. A message class and placement can be combined, as in `send A -> B : eager @outside`.
+
+Within each view, the first hop using a link takes its centerline by default. Additional uses go outside so their arrows remain visible. An explicit `@overlay` reserves the centerline even if it appears later in the view. An explicit `@outside` leaves the centerline available. Two explicit overlays on the same link share its geometry.
+
+An outside arc on a straight link bends away from the center of the peer layout. If the center lies on the link's axis, the arc bends to the right of the direction of travel. An outside arc on a curved link follows its existing bend with greater curvature.
+
+## Saving a figure
+
+`save_figure` chooses the output format from the filename extension and returns the output path. SVG export is included in the base package. For PNG, JPEG (`.jpg` or `.jpeg`), and lossless WebP, install the raster extra from the repository root.
+
+```sh
+python -m pip install -e '.[raster]'
+```
+
+The following example uses the topology and style from the first example.
+
+```python
+save_figure(gossip, "gossip.png", style=style, scale=2)
+save_figure(gossip, "gossip.jpg", style=style, scale=2)
+save_figure(gossip, "gossip.webp", style=style, scale=2)
+```
+
+`scale` multiplies both output dimensions. For example, the Gossip figure is 624 × 188 pixels at its default size and 1248 × 376 at `scale=2`. All formats use the same SVG layout, message placements, and style. Use `render_svg(graph, style=style)` when you need SVG markup as a Python string.
+
+Weights, groups, layers, manual coordinates, external style files, and PDF output are topics for later versions.

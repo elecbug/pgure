@@ -88,16 +88,31 @@ def _arrowhead(group: ET.Element, start: _Point, control: _Point, end: _Point,
                   stroke=color, fill=color if filled else "none", **{"stroke-width": "1.5"})
 
 
+def _link_bend(start: _Point, end: _Point, radius: float, directed: bool) -> float:
+    bend = 10.0 if directed else 0.0
+    dy = end[1] - start[1]
+    if start[0] == end[0] and abs(dy) > 2 * radius + 35:
+        # Bypass intervening peers in the same column.
+        bend -= math.copysign(min(abs(dy) * 0.4, radius + 50), dy)
+    return bend
+
+
+def _outside_bend(start: _Point, end: _Point, center: _Point,
+                  link_bend: float, distance: float) -> float:
+    side = link_bend
+    if not side:
+        # Pick the normal pointing away from the center of the peer layout.
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        side = dx * (start[1] - center[1]) - dy * (start[0] - center[0])
+    return link_bend + math.copysign(distance, side or 1.0)
+
+
 def _edge(group: ET.Element, start: _Point, end: _Point, radius: float, stroke: Stroke,
-          *, arrow: bool, message: bool = False, bend: float = 0) -> None:
+          *, bend: float, arrow: bool, message: bool = False) -> ET.Element:
     x, y = start
     dx, dy = end[0] - x, end[1] - y
     length = math.hypot(dx, dy)
     nx, ny = -dy / length, dx / length
-    # Bend same-column links around the intervening peers. Different curves
-    # and arrowheads keep the link direction legible under a message overlay.
-    if dx == 0 and abs(dy) > 2 * radius + 35:
-        bend -= math.copysign(min(length * 0.4, radius + 50), dy)
     cx, cy = x + dx / 2 + nx * bend, y + dy / 2 + ny * bend
 
     def boundary(point: _Point) -> _Point:
@@ -114,6 +129,7 @@ def _edge(group: ET.Element, start: _Point, end: _Point, radius: float, stroke: 
         path.set("stroke-dasharray", stroke.dash)
     if arrow:
         _arrowhead(group, (ax, ay), (cx, cy), (bx, by), stroke.color, message)
+    return path
 
 
 def _label(parent: ET.Element, text: str, x: float, y: float, size: int) -> ET.Element:
@@ -123,15 +139,36 @@ def _label(parent: ET.Element, text: str, x: float, y: float, size: int) -> ET.E
     return node
 
 
-def render_svg(graph: Topology, *, style: Style | None = None) -> str:
-    """Return an SVG document with shared coordinates and one panel per view."""
+def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1) -> str:
+    """Return a standalone SVG. Scale multiplies its output dimensions."""
+    if not math.isfinite(scale) or scale <= 0:
+        raise ValueError("scale must be a positive finite number")
     graph.validate()
     style = Style() if style is None else style
     positions, radius, width, height = _layout(graph)
+    links_by_hop = {}
+    bends = {}
+    for link in graph.links:
+        a, b = link.source, link.target
+        bend = _link_bend(positions[a], positions[b], radius, link.directed)
+        links_by_hop[a, b] = link
+        bends[a, b] = bend
+        if not link.directed:
+            links_by_hop[b, a] = link
+            bends[b, a] = -bend
+    # Leave room on the panel boundary for arcs around long vertical links.
+    if any(abs(bend) > 10 for bend in bends.values()):
+        margin = 26
+        width += 2 * margin
+        positions = {peer: (x + margin, y) for peer, (x, y) in positions.items()}
+    xs, ys = zip(*positions.values())
+    center = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
     views = graph.views
     total_width = width * len(views)
-    svg = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=str(total_width),
-                     height=str(height), viewBox=f"0 0 {total_width} {height}",
+    output_width = max(1, round(total_width * scale))
+    output_height = max(1, round(height * scale))
+    svg = ET.Element("svg", xmlns="http://www.w3.org/2000/svg", width=str(output_width),
+                     height=str(output_height), viewBox=f"0 0 {total_width} {height}",
                      **{"font-family": "DejaVu Sans, sans-serif"})
     ET.SubElement(svg, "title").text = graph.name
     ET.SubElement(svg, "rect", width="100%", height="100%", fill="white")
@@ -150,22 +187,30 @@ def render_svg(graph: Topology, *, style: Style | None = None) -> str:
                 group.set("data-kind", link.kind)
             stroke = style.links.get(link.kind, _LINK) if link.kind else _LINK
             _edge(group, positions[link.source], positions[link.target], radius, stroke,
-                  arrow=link.directed, bend=10 if link.directed else 0)
-        # Separate messages sharing a hop so all of their styles remain visible.
-        counts = Counter(hop for route in view.messages for hop in zip(route.path, route.path[1:]))
-        drawn: Counter[tuple[str, str]] = Counter()
+                  arrow=link.directed, bend=bends[link.source, link.target])
+        uses = Counter(links_by_hop[hop] for route in view.messages
+                       for hop in zip(route.path, route.path[1:]))
+        occupied = {links_by_hop[hop] for route in view.messages if route.placement == "overlay"
+                    for hop in zip(route.path, route.path[1:])}
+        outside_count = Counter()
         for route in view.messages:
             group = ET.SubElement(panel, "g", {"class": "message", "data-path": " ".join(route.path)})
             if route.kind is not None:
                 group.set("data-kind", route.kind)
             stroke = style.messages.get(route.kind, _MESSAGE) if route.kind else _MESSAGE
             for a, b in zip(route.path, route.path[1:]):
-                bend = 30.0
-                if counts[a, b] > 1:
-                    bend = 20 + 30 * drawn[a, b] / (counts[a, b] - 1)
-                _edge(group, positions[a], positions[b], radius, stroke,
-                      arrow=True, message=True, bend=bend)
-                drawn[a, b] += 1
+                link = links_by_hop[a, b]
+                placement = route.placement or ("outside" if link in occupied else "overlay")
+                bend = bends[a, b]
+                if placement == "outside":
+                    distance = 30 + 26 * outside_count[link] / max(1, uses[link] - 1)
+                    bend = _outside_bend(positions[a], positions[b], center, bend, distance)
+                    outside_count[link] += 1
+                else:
+                    occupied.add(link)
+                path = _edge(group, positions[a], positions[b], radius, stroke,
+                             arrow=True, message=True, bend=bend)
+                path.set("data-placement", placement)
         for peer, (x, y) in positions.items():
             role = graph.peers[peer]
             group = ET.SubElement(panel, "g", {"class": "peer", "data-id": peer})

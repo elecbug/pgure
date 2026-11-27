@@ -1,3 +1,4 @@
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,6 +12,19 @@ SVG = {"s": "http://www.w3.org/2000/svg"}
 
 
 class DescriptionTests(unittest.TestCase):
+    def test_fanout_placement_and_validation(self):
+        graph = parse('topology T { A -- outside, C\nview "V" { send A -> outside, C : probe @outside } }')
+        self.assertEqual(graph.views[0].messages, (
+            Message(("A", "outside"), "probe", placement="outside"),
+            Message(("A", "C"), "probe", placement="outside"),
+        ))
+        with self.assertRaisesRegex(DSLError, "2:27 in view 'V': unknown placement"):
+            parse('topology T { A -- B\nview "V" { send A -> B   @side } }')
+        with self.assertRaisesRegex(DSLError, "no link for hop B -> A"):
+            parse('topology T { A -> B\nview "V" { send B -> A @outside } }')
+        with self.assertRaisesRegex(ValueError, "unknown message placement"):
+            Message(("A", "B"), placement="side")
+
     def test_forward_references_and_fanout(self):
         graph = parse('''topology T {
     view "First" { send A -> B, C : lazy }
@@ -98,6 +112,62 @@ class DescriptionTests(unittest.TestCase):
 
 
 class RenderTests(unittest.TestCase):
+    def test_placement_guide_overlay_and_outward_arc(self):
+        guide = (DOCS / "figure-dsl.md").read_text(encoding="utf-8")
+        source = guide.split("```text\ntopology Placement", 1)[1].split("```", 1)[0]
+        svg = render_svg(parse("topology Placement" + source))
+        self.assertEqual(svg, (DOCS / "message-placement.svg").read_text(encoding="utf-8"))
+        overlay, outside = ET.fromstring(svg).findall("s:g[@class='panel']", SVG)
+        base = {(g.get("data-source"), g.get("data-target")): g[0].get("d")
+                for g in overlay.findall("s:g[@class='link']", SVG)}
+
+        def control_y(path):
+            return float(path.split(" Q")[1].split()[0].split(",")[1])
+
+        for i, hop in enumerate([("A", "B"), ("B", "D")]):
+            along = overlay.findall(".//s:path[@data-placement='overlay']", SVG)[i].get("d")
+            arc = outside.findall(".//s:path[@data-placement='outside']", SVG)[i].get("d")
+            self.assertEqual(along, base[hop])
+            # The outside arc of each upper link bends above its centerline.
+            self.assertLess(control_y(arc), control_y(along))
+
+    def test_overlay_on_curved_links_in_either_direction(self):
+        graph = parse('''topology T {
+    A -- B, C, D
+    B -- D
+    C -> D
+    view "V" {
+        send D -> B @overlay
+        send C -> D @overlay
+    }
+}''')
+        panel = ET.fromstring(render_svg(graph)).find("s:g[@class='panel']", SVG)
+
+        def points(path):
+            return re.findall(r"[-\d.]+,[-\d.]+", path.get("d"))
+
+        links = {(g.get("data-source"), g.get("data-target")): points(g[0])
+                 for g in panel.findall("s:g[@class='link']", SVG)}
+        backward, forward = panel.findall(".//s:path[@data-placement='overlay']", SVG)
+        self.assertEqual(points(backward), list(reversed(links["B", "D"])))
+        self.assertEqual(points(forward), links["C", "D"])
+
+    def test_explicit_overlays_reserve_the_link_for_both_directions(self):
+        graph = parse('''topology T {
+    A -- B
+    view "V" {
+        send B -> A
+        send A -> B @outside
+        send A -> B @overlay
+        send A -> B @overlay
+    }
+    view "W" { send A -> B }
+}''')
+        paths = ET.fromstring(render_svg(graph)).findall(".//s:path[@data-placement]", SVG)
+        self.assertEqual([p.get("data-placement") for p in paths],
+                         ["outside", "outside", "overlay", "overlay", "overlay"])
+        self.assertEqual(len({p.get("d") for p in paths[2:]}), 1)
+
     def test_guide_examples_and_svg_match(self):
         # Keep the figure, downloadable source, and guide example in sync.
         guide = (DOCS / "figure-dsl.md").read_text(encoding="utf-8")

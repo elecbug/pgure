@@ -1,2 +1,2 @@
 include README.kr.md
-include docs/figure-dsl.md docs/gossip.pgure docs/gossip.svg
+include docs/figure-dsl.md docs/gossip.pgure docs/gossip.svg docs/message-placement.svg

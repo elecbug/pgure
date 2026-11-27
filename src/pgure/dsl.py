@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NoReturn
 
-from .model import IDENTIFIER, KEYWORDS, Message, Topology, _RouteError
+from .model import IDENTIFIER, KEYWORDS, PLACEMENTS, Message, Topology, _RouteError
 
 
 class DSLError(ValueError):
@@ -31,7 +31,7 @@ class _Token:
 _LEXEME = re.compile(
     r'(?P<skip>[ \t]+|\#[^\r\n]*)|(?P<newline>\r?\n)|'
     r'(?P<string>"(?:[^"\\\r\n]|\\["\\])*")|'
-    rf'(?P<id>{IDENTIFIER.pattern})|(?P<symbol>--|->|[{{}}:,])|(?P<invalid>.)'
+    rf'(?P<id>{IDENTIFIER.pattern})|(?P<symbol>--|->|[{{}}:,@])|(?P<invalid>.)'
 )
 
 
@@ -56,7 +56,7 @@ def _tokens(text: str) -> Iterator[_Token]:
 @dataclass
 class _PendingView:
     title: str
-    paths: list[tuple[list[_Token], str | None]] = field(default_factory=list)
+    paths: list[tuple[Message, list[_Token]]] = field(default_factory=list)
 
 
 class _Parser:
@@ -124,11 +124,10 @@ class _Parser:
                 self.fail(str(error), peer)
         for panel in self.views:
             self.view = panel.title
-            messages = (Message(tuple(t.value for t in path), kind) for path, kind in panel.paths)
             try:
-                graph.add_view(panel.title, messages)
+                graph.add_view(panel.title, (message for message, _ in panel.paths))
             except _RouteError as error:
-                path, _ = panel.paths[error.message_index]
+                _, path = panel.paths[error.message_index]
                 self.fail(str(error), path[error.peer_index])
         self.view = None
         try:
@@ -186,7 +185,16 @@ class _Parser:
             if self.token.kind == "->":
                 self.fail("use separate sends for a fan-out and a chain", self.token)
             kind = self.tag()
-            panel.paths.extend((path, kind) for path in paths)
+            placement = None
+            if self.token.kind == "@":
+                self.take("@")
+                token = self.take("id")
+                if token.value not in PLACEMENTS:
+                    self.fail(f"unknown placement {token.value!r}, expected overlay or outside", token)
+                placement = token.value
+            for path in paths:
+                message = Message(tuple(peer.value for peer in path), kind, placement=placement)
+                panel.paths.append((message, path))
             self.end_statement()
         self.take("}")
         self.views.append(panel)

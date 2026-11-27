@@ -10,6 +10,7 @@ from types import MappingProxyType
 
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 KEYWORDS = {"topology", "node", "view", "send"}
+PLACEMENTS = ("overlay", "outside")
 
 
 def _identifier(value: str) -> str:
@@ -20,10 +21,11 @@ def _identifier(value: str) -> str:
 
 @dataclass(frozen=True)
 class Message:
-    """One path, in transmission order, with an optional message class."""
+    """One path, with an optional message class and placement relative to its links."""
 
     path: tuple[str, ...]
     kind: str | None = None
+    placement: str | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.path, str):
@@ -34,6 +36,8 @@ class Message:
         object.__setattr__(self, "path", path)
         if self.kind is not None:
             _identifier(self.kind)
+        if self.placement is not None and self.placement not in PLACEMENTS:
+            raise ValueError(f"unknown message placement {self.placement!r}; expected overlay or outside")
 
 
 @dataclass(frozen=True)

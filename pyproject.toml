@@ -11,6 +11,9 @@ requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 
+[project.optional-dependencies]
+raster = ["resvg-py>=0.5", "Pillow"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 namespaces = false

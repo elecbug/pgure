@@ -11,8 +11,9 @@ Python, then reuse that topology across figures. Keeping node positions
 and visual conventions consistent makes it easier for readers to compare
 message paths, peer roles, and network states.
 
-The [figure language guide](docs/figure-dsl.md) shows how to render the
-same two-panel SVG from a DSL file or a Python topology.
+Save figures with `save_figure(topology, "figure.svg")`. For PNG, JPEG, or WebP,
+install the raster extra with `python -m pip install -e '.[raster]'` and use
+the desired filename extension. See the [figure language guide](docs/figure-dsl.md#saving-a-figure).
 
 ## Local development
 
