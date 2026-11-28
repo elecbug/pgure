@@ -45,6 +45,8 @@ save_figure(gossip, "gossip.svg")
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | String, required | Topology identifier and default panel title. |
+| `seed` | Integer | Master seed for generated groups. Defaults to `0`. |
+| `groups` | List of mappings | Each entry generates `n` peers under a unique `id`. Optional fields are `domain`, `params`, and `seed`. |
 | `peers` | List of mappings | Each entry has an `id` and an optional `role`. Declare isolated peers here. Link endpoints also declare peers. |
 | `links` | List of mappings | Each link has a `source` and `target`. Set `directed: true` for a one-way link. The default is undirected. The optional `kind` selects a link class. |
 | `views` | List of mappings | Each view has a string `title` and an optional list of `messages`. Panels appear in list order. Titles may repeat. |
@@ -55,6 +57,52 @@ Identifiers, roles, and classes are nonempty printable strings without whitespac
 A topology needs at least one peer. Repeated declarations of a peer or link refer to the same object. Conflicting roles or link classes, self-links, and overlapping directed and undirected links produce errors. Two opposite directed links can have different classes. Each hop in a message must follow a declared link in its transmission direction.
 
 With no views, P-Gure draws the base topology in one panel. With no messages, a view shows the base topology alone. For a fan-out from A to B and C, list two messages with paths `[A, B]` and `[A, C]`. The single path `[A, B, C]` describes B forwarding to C. Messages in one panel have no implied timing relationship.
+
+## Generating networks from a seed
+
+To sketch a network, give a group an ID and a positive node count. This figure contains 20 peers with IDs `P-1` through `P-20`. Its links follow the default Erdős–Rényi (ER) model.
+
+```yaml
+name: Sketch
+seed: 42
+groups: [{id: P, n: 20}]
+```
+
+A group's `domain` selects its internal graph model. Each model produces undirected links within that group. Add entries to `groups` to draw independent networks in the same panel. Names are case-insensitive for domains and case-sensitive for group IDs.
+
+| Domain | Model | Parameters and defaults |
+| --- | --- | --- |
+| `er` | Erdős–Rényi G(n, p) | Each pair connects independently with probability `p` in [0, 1]. The default is `min(1, 3 / max(1, n - 1))`, targeting an expected degree of three where possible. Isolated peers are included. |
+| `ws` | Watts–Strogatz | Each peer starts with `k` neighbors on a ring. Each ring-lattice edge is eligible for rewiring with probability `beta` in [0, 1], default `0.1`. Use an even `k` with `0 <= k < n`. The default is the largest such value up to 4. |
+| `ba` | Barabási–Albert | Each new peer attaches to `m` existing peers by preferential attachment. Requires `n >= 2` and `1 <= m < n`. Default `m` is `min(2, n - 1)`. |
+| `ring` | Cycle | No parameters. A single peer is isolated and two peers share one link. |
+| `mesh` | Complete graph | No parameters. Each pair of peers shares one link. |
+
+For example, these two groups have the same number of peers and use different models.
+
+```yaml
+name: GeneratedGroups
+seed: 42
+groups:
+  - {id: Sample, n: 10, domain: er, params: {p: 0.32}}
+  - {id: Lattice, n: 10, domain: ws, params: {k: 4, beta: 0.25}}
+```
+
+The master seed and group ID determine each group's seed. Adding or reordering other groups preserves its internal links. An optional integer `seed` on the group overrides this derivation. To compare parameter values on the same random stream, use the same explicit group seed. For exact reproduction across machines, record the package versions alongside the seeds. P-Gure uses the NetworkX generators. [ER model](https://networkx.org/documentation/stable/reference/generated/networkx.generators.random_graphs.fast_gnp_random_graph.html) · [WS model](https://networkx.org/documentation/stable/reference/generated/networkx.generators.random_graphs.watts_strogatz_graph.html)
+
+Generated peers can receive roles, link classes, and messages through the usual fields. Use the full ID in paths such as `[P-1, P-2]`. Each hop must exist in the generated or explicitly declared links. The renderer labels peers with their local numbers inside the group frame. The SVG retains the full peer IDs.
+
+The same models are available from Python. The returned group records its members, effective seed, and resolved parameters.
+
+```python
+from pgure import Topology, save_figure
+
+graph = Topology("Sketch", seed=42)
+sample = graph.add_group("Sample", 10, domain="er", params={"p": 0.32})
+graph.add_group("Lattice", 10, domain="ws", params={"k": 4, "beta": 0.25})
+graph.set_role(sample.members[0], "source")
+save_figure(graph, "sketch.svg")
+```
 
 ## Reading and validating data
 
@@ -74,7 +122,23 @@ Invalid input raises `FigureError`. A data error identifies the field, such as `
 
 ## Layout and style
 
-The renderer places each connected component in breadth-first columns from its alphabetically first peer. It computes the layout once for all panels. An open arrowhead shows link direction and a filled arrowhead shows message direction.
+For a topology consisting entirely of explicit peers and links, the renderer places each connected component in breadth-first columns from its alphabetically first peer. It computes coordinates once for all panels. An open arrowhead shows link direction and a filled arrowhead shows message direction.
+
+### Group layout
+
+Choose member positions and group arrangement in the companion `.meta.yaml`. Changing these settings preserves the topology. This sheet places the two groups from the previous example side by side.
+
+```yaml
+groups:
+  arrange: row
+  default: {layout: circle}
+  ids:
+    Sample: {layout: spring}
+```
+
+Use `circle` (default) to place peers in member order around a ring, `grid` for a rectangular lattice of positions, or `spring` for a force-directed layout based on internal links and the group's seed. Member layout is independent of the graph model, so a WS group can also use a spring layout. The group-level `arrange` accepts `row`, `column`, or `grid` (default). Frames follow group declaration order. Any peers outside the declared groups share a final frame titled “Other peers”. [Rendered example and source](../examples/README.md#seeded-er-and-ws-networks)
+
+### Message placement
 
 ![The same route drawn on the links in the left panel and outside them in the right panel.](message-placement.svg)
 
@@ -105,6 +169,7 @@ Rules inherit individual properties. Built-in values apply first, then the categ
 | `peers` | `roles` | `fill` for the interior, `stroke` for the border color, `width` and `line` for the border, `label_color` for the peer ID |
 | `links` | `kinds` | `color`, `width`, `line`, `placement` for messages using this link |
 | `messages` | `kinds` | `color`, `width`, `line`, `placement` for the message's hops |
+| `groups` | `ids` | `layout` for member positions, `fill`, `stroke`, `width`, and `line` for the frame, `label_color` for the group title |
 
 Use SVG color strings and quote hex colors so YAML preserves the leading `#`. Widths are nonnegative numbers in SVG units. The named line patterns are `solid`, `dashed`, `dotted`, and `dash-dot`. Their short forms are `"-"`, `"--"`, `":"`, and `"-."`. For a custom pattern, use a sequence such as `line: [8, 3, 2, 3]` to alternate painted and empty lengths.
 

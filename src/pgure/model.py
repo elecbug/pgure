@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
+from .generation import Group, _generate, _GroupError, _integer
 from .style import Style
 
 
@@ -60,12 +61,35 @@ class _RouteError(ValueError):
 class Topology:
     """Build a figure by declaring peers and links, then adding message views."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, *, seed: int = 0):
         self.name = _identifier(name)
+        self.seed = _integer(seed, "seed")
         self.style = Style()
         self._peers: dict[str, str | None] = {}
         self._links: dict[tuple[str, str, bool], Link] = {}
         self._views: list[View] = []
+        self._groups: dict[str, Group] = {}
+
+    @property
+    def groups(self) -> Mapping[str, Group]:
+        return MappingProxyType(self._groups)
+
+    def add_group(self, group_id: str, n: int, *, domain: str = "er", seed: int | None = None,
+                  params: Mapping[str, int | float] | None = None) -> Group:
+        """Generate one group. Automatic links have both endpoints in this group."""
+        _identifier(group_id)
+        if group_id in self._groups:
+            raise _GroupError(("id",), f"duplicate group {group_id!r}")
+        group, edges = _generate(group_id, n, domain, {} if params is None else params, seed, self.seed)
+        collision = next((peer for peer in group.members if peer in self._peers), None)
+        if collision is not None:
+            raise _GroupError(("id",), f"generated peer {collision!r} already exists")
+        for peer in group.members:
+            self.add_peer(peer)
+        for a, b in edges:
+            self.add_link(group.members[a], group.members[b])
+        self._groups[group_id] = group
+        return group
 
     @property
     def peers(self) -> Mapping[str, str | None]:

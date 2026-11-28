@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 
 INK = "#213547"
 PLACEMENTS = ("auto", "overlay", "outside")
+LAYOUTS = ("circle", "grid", "spring")
+ARRANGEMENTS = ("grid", "row", "column")
 
 
 @dataclass(frozen=True)
@@ -29,8 +31,20 @@ class PeerStyle:
 
 
 @dataclass(frozen=True)
+class GroupStyle(PeerStyle):
+    """Appearance of a group frame and layout of its members."""
+
+    border: Stroke = Stroke("#c8d1d8", width=1)
+    layout: str = "circle"
+
+    def __post_init__(self) -> None:
+        if self.layout not in LAYOUTS:
+            raise ValueError("layout must be circle, grid, or spring")
+
+
+@dataclass(frozen=True)
 class Style:
-    """Category defaults and resolved rules for peer roles and message/link kinds."""
+    """Category defaults and rules for group IDs, peer roles, and link/message kinds."""
 
     peer_fills: Mapping[str, str] = field(default_factory=dict)
     links: Mapping[str, Stroke] = field(default_factory=dict)
@@ -39,6 +53,13 @@ class Style:
     peer_default: PeerStyle = PeerStyle()
     link_default: Stroke = Stroke("#778794", width=1.4)
     message_default: Stroke = Stroke("#145f91", width=2.5)
+    group_default: GroupStyle = GroupStyle()
+    groups: Mapping[str, GroupStyle] = field(default_factory=dict)
+    group_arrangement: str = "grid"
+
+    def __post_init__(self) -> None:
+        if self.group_arrangement not in ARRANGEMENTS:
+            raise ValueError("group arrangement must be grid, row, or column")
 
     def placement_for(self, message_kind: str | None, link_kind: str | None) -> str:
         """Resolve one hop, checking kind rules before category defaults."""

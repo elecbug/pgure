@@ -1,6 +1,6 @@
 # P-Gure example gallery
 
-These four figures show how peer links and message paths interact. Each entry includes the topology and its companion stylesheet, a PNG preview, and an SVG for use in a paper.
+These figures show generated network models and message paths over explicit peer links. Each entry includes the topology and its companion stylesheet, a PNG preview, and an SVG for use in a paper.
 
 ## Broadcast in two rounds
 
@@ -134,6 +134,29 @@ views:
   - title: Cross-cluster delivery
     messages:
       - {path: [A, C, D, F]}
+```
+
+</details>
+
+## Seeded ER and WS networks
+
+Each group has ten peers. On the left, each pair has a 0.32 probability of forming an edge. On the right, each peer starts with four neighbors on a ring and each edge has a 0.25 probability of rewiring. Both groups derive their seeds from the figure seed of 42. The stylesheet uses a spring layout for Sample and a circle for Lattice.
+
+![Two independently generated ten-peer networks, with the ER sample on the left and the WS ring lattice with rewired edges on the right.](generated-groups.png)
+
+[Topology](generated-groups.yaml) · [Stylesheet](generated-groups.meta.yaml) · [Vector figure](generated-groups.svg)
+
+<details>
+<summary>View YAML</summary>
+
+```yaml
+name: GeneratedGroups
+seed: 42
+groups:
+  - {id: Sample, n: 10, domain: er, params: {p: 0.32}}
+  - {id: Lattice, n: 10, domain: ws, params: {k: 4, beta: 0.25}}
+views:
+  - title: Two networks from seed 42
 ```
 
 </details>

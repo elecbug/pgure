@@ -21,8 +21,11 @@ from pgure import load, save_figure
 save_figure(load("docs/gossip.yaml"), "gossip.svg")
 ```
 
-Browse the [example gallery](examples/README.md) for YAML and figures covering
-tree broadcasts, token rings, block exchanges, and bridged clusters.
+Generate a network from a node count and a seed, or combine several groups
+in one figure. Each group chooses its own model and parameters, such as ER
+with edge probability `p` or WS with neighborhood size `k` and rewiring
+probability `beta`. The stylesheet controls how peers and groups are arranged.
+[Example gallery](examples/README.md) · [Seeded ER and WS example](examples/generated-groups.yaml)
 
 For PNG, JPEG, or WebP,
 install the raster extra with `python -m pip install -e '.[raster]'` and use

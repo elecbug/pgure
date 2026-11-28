@@ -7,6 +7,7 @@ import re
 from collections import Counter, defaultdict, deque
 from xml.etree import ElementTree as ET
 
+from .group_layout import layout_groups
 from .model import Topology
 from .style import INK, Stroke, Style
 
@@ -136,7 +137,11 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
         raise ValueError("scale must be a positive finite number")
     graph.validate()
     style = graph.style if style is None else style
-    positions, radius, width, height = _layout(graph)
+    frames, labels = [], {}
+    if graph.groups:
+        positions, radius, width, height, frames, labels = layout_groups(graph, style)
+    else:
+        positions, radius, width, height = _layout(graph)
     links_by_hop = {}
     bends = {}
     for link in graph.links:
@@ -148,12 +153,16 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
             links_by_hop[b, a] = link
             bends[b, a] = -bend
     # Leave room on the panel boundary for arcs around long vertical links.
-    if any(abs(bend) > 10 for bend in bends.values()):
+    if not frames and any(abs(bend) > 10 for bend in bends.values()):
         margin = 26
         width += 2 * margin
         positions = {peer: (x + margin, y) for peer, (x, y) in positions.items()}
     xs, ys = zip(*positions.values())
     center = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+    centers = {}
+    for frame in frames:
+        local_center = (frame.x + frame.width / 2, frame.y + (frame.height + 22) / 2)
+        centers.update(dict.fromkeys(frame.positions, local_center))
     views = graph.views
     total_width = width * len(views)
     output_width = max(1, round(total_width * scale))
@@ -170,6 +179,15 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
         if len(title) * 12 > width - 24:
             label.set("textLength", str(width - 24))
             label.set("lengthAdjust", "spacingAndGlyphs")
+        for frame in frames:
+            region = ET.SubElement(panel, "g", {"class": "group"})
+            if frame.group:
+                region.set("data-group", frame.group.id)
+                region.set("data-domain", frame.group.domain)
+            rect = ET.SubElement(region, "rect", x=f"{frame.x:g}", y=f"{frame.y:g}",
+                                 width=str(frame.width), height=str(frame.height), rx="6", fill=frame.style.fill)
+            _apply_stroke(rect, frame.style.border, 1)
+            _label(region, frame.title, frame.x + frame.width / 2, frame.y + 22, 14, frame.style.label_color)
         for link in graph.links:
             group = ET.SubElement(panel, "g", {"class": "link", "data-source": link.source,
                                                "data-target": link.target,
@@ -201,7 +219,8 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
                 bend = bends[a, b]
                 if placement == "outside":
                     distance = 30 + 26 * outside_count[link] / max(1, uses[link] - 1)
-                    bend = _outside_bend(positions[a], positions[b], center, bend, distance)
+                    hop_center = centers.get(a, center) if centers.get(a) == centers.get(b) else center
+                    bend = _outside_bend(positions[a], positions[b], hop_center, bend, distance)
                     outside_count[link] += 1
                 else:
                     occupied.add(link)
@@ -217,5 +236,7 @@ def render_svg(graph: Topology, *, style: Style | None = None, scale: float = 1)
             fill = style.peer_fills.get(role, peer_style.fill) if role else peer_style.fill
             circle = ET.SubElement(group, "circle", cx=f"{x:g}", cy=f"{y:g}", r=f"{radius:g}", fill=fill)
             _apply_stroke(circle, peer_style.border, 1.6)
-            _label(group, peer, x, y + 5, 14, peer_style.label_color)
+            _label(group, labels.get(peer, peer), x, y + 5, 14, peer_style.label_color)
+            if peer in labels:
+                ET.SubElement(group, "title").text = peer
     return ET.tostring(svg, encoding="unicode")

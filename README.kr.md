@@ -19,8 +19,10 @@ from pgure import load, save_figure
 save_figure(load("docs/gossip.yaml"), "gossip.svg")
 ```
 
-[예제 모음](examples/README.md)에서 트리 브로드캐스트, 토큰 링, 블록 요청과 응답,
-두 클러스터 사이의 메시지 전달을 YAML과 그림으로 볼 수 있습니다.
+노드 수와 시드로 네트워크를 생성하고 여러 그룹을 한 그림에 배치할 수 있습니다.
+그룹마다 ER의 연결 확률 `p`, WS의 이웃 수 `k`와 재연결 확률 `beta`처럼
+모델에 맞는 매개변수를 지정합니다. 그룹 내부의 노드 배치와 그룹 간 배열은
+스타일시트에서 선택합니다. [예제 모음](examples/README.md) · [ER과 WS 예제](examples/generated-groups.yaml)
 
 PNG, JPEG, WebP는
 `python -m pip install -e '.[raster]'`로 이미지 변환 패키지를 설치한 뒤 파일 확장자를

@@ -8,7 +8,7 @@ version = "0.1.0.dev0"
 description = "Figures for peer-to-peer network research"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["ruamel.yaml>=0.18"]
+dependencies = ["ruamel.yaml>=0.18", "networkx>=3.2,<4", "numpy>=1.24", "scipy>=1.10"]
 license = "MIT"
 license-files = ["LICENSE"]
 

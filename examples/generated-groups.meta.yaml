@@ -1,0 +1,9 @@
+groups:
+  arrange: row
+  default: {layout: circle, fill: "#f9fbfc", stroke: "#c5d0d8"}
+  ids:
+    Sample: {layout: spring}
+peers:
+  default: {fill: white, stroke: "#215269", label_color: "#193c4d"}
+links:
+  default: {color: "#78919c"}

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from contextlib import contextmanager
+from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from sys import float_info
 
 from ruamel.yaml import YAML, YAMLError
 from ruamel.yaml.nodes import MappingNode, SequenceNode
 
+from .generation import _GroupError
 from .model import Message, Topology, _RouteError, _identifier
-from .style import PLACEMENTS, PeerStyle, Stroke, Style
+from .style import ARRANGEMENTS, LAYOUTS, PLACEMENTS, Stroke, Style
 
 
 _Path = tuple[str | int, ...]
@@ -69,9 +72,26 @@ def _records(parent, field, parent_path, required, optional):
 
 def from_dict(data: Mapping) -> Topology:
     """Construct and validate a topology from a figure mapping."""
-    _record(data, (), ("name",), ("peers", "links", "views"))
-    with _at(("name",)):
-        graph = Topology(data["name"])
+    _record(data, (), ("name",), ("seed", "groups", "peers", "links", "views"))
+    try:
+        graph = Topology(data["name"], seed=data.get("seed", 0))
+    except _GroupError as error:
+        raise FigureError(str(error), error.field) from error
+    except ValueError as error:
+        raise FigureError(str(error), ("name",)) from error
+
+    for group, at in _records(data, "groups", (), ("id", "n"), ("domain", "params", "seed")):
+        if "params" in group and not isinstance(group["params"], Mapping):
+            raise FigureError("expected a mapping", (*at, "params"))
+        if "seed" in group and group["seed"] is None:
+            raise FigureError("seed must be an integer", (*at, "seed"))
+        try:
+            graph.add_group(group["id"], group["n"], domain=group.get("domain", "er"),
+                            params=group.get("params"), seed=group.get("seed"))
+        except _GroupError as error:
+            raise FigureError(str(error), (*at, *error.field)) from error
+        except ValueError as error:
+            raise FigureError(str(error), (*at, "id")) from error
 
     for peer, at in _records(data, "peers", (), ("id",), ("role",)):
         with _at((*at, "id")):
@@ -158,15 +178,21 @@ def _edge_rule(data, base, path):
     return _stroke(data, base, path, "color", placement=placement)
 
 
-def _peer_rule(data, base, path):
-    _record(data, path, (), ("fill", "stroke", "width", "line", "label_color"))
-    return PeerStyle(fill=_color(data, "fill", base.fill, path),
-                     border=_stroke(data, base.border, path, "stroke"),
-                     label_color=_color(data, "label_color", base.label_color, path))
+def _shape_rule(data, base, path, *, group=False):
+    properties = ("fill", "stroke", "width", "line", "label_color")
+    _record(data, path, (), (*properties, "layout") if group else properties)
+    if group:
+        layout = data.get("layout", base.layout)
+        if layout not in LAYOUTS:
+            raise FigureError("expected circle, grid, or spring", (*path, "layout"))
+        base = replace(base, layout=layout)
+    return replace(base, fill=_color(data, "fill", base.fill, path),
+                   border=_stroke(data, base.border, path, "stroke"),
+                   label_color=_color(data, "label_color", base.label_color, path))
 
 
-def _rules(sheet, category, selector, base, compile_rule):
-    group = _record(sheet.get(category, {}), (category,), (), ("default", selector))
+def _rules(sheet, category, selector, base, compile_rule, *, extra_fields=()):
+    group = _record(sheet.get(category, {}), (category,), (), ("default", selector, *extra_fields))
     default = compile_rule(group.get("default", {}), base, (category, "default"))
     rules = group.get(selector, {})
     if not isinstance(rules, Mapping):
@@ -181,12 +207,19 @@ def _rules(sheet, category, selector, base, compile_rule):
 
 
 def _style_from_dict(data):
-    _record(data, (), (), ("peers", "links", "messages"))
+    _record(data, (), (), ("peers", "links", "messages", "groups"))
     base = Style()
-    peer, peers = _rules(data, "peers", "roles", base.peer_default, _peer_rule)
+    peer, peers = _rules(data, "peers", "roles", base.peer_default, _shape_rule)
     link, links = _rules(data, "links", "kinds", base.link_default, _edge_rule)
     message, messages = _rules(data, "messages", "kinds", base.message_default, _edge_rule)
-    return Style(peers=peers, links=links, messages=messages,
+    group, groups = _rules(data, "groups", "ids", base.group_default,
+                           partial(_shape_rule, group=True),
+                           extra_fields=("arrange",))
+    arrange = data.get("groups", {}).get("arrange", base.group_arrangement)
+    if arrange not in ARRANGEMENTS:
+        raise FigureError("expected grid, row, or column", ("groups", "arrange"))
+    return Style(peers=peers, links=links, messages=messages, groups=groups,
+                 group_default=group, group_arrangement=arrange,
                  peer_default=peer, link_default=link, message_default=message)
 
 

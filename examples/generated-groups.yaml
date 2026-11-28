@@ -1,0 +1,7 @@
+name: GeneratedGroups
+seed: 42
+groups:
+  - {id: Sample, n: 10, domain: er, params: {p: 0.32}}
+  - {id: Lattice, n: 10, domain: ws, params: {k: 4, beta: 0.25}}
+views:
+  - title: Two networks from seed 42
